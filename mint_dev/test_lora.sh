@@ -16,6 +16,5 @@ accelerate launch examples/wanvideo/model_training/train.py \
   --lora_target_modules "q,k,v,o,ffn.0,ffn.2" \
   --lora_rank 32 \
   --use_gradient_checkpointing \
-  --use_gradient_checkpointing_offload \
   --find_unused_parameters \
 
