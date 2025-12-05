@@ -96,11 +96,13 @@ class ModelConfig:
         self.check_input()
         self.reset_local_model_path()
         if self.require_downloading():
+            print("[#] Requiring downloading model files...")
             self.download()
             if self.origin_file_pattern is None or self.origin_file_pattern == "":
                 self.path = os.path.join(self.local_model_path, self.model_id)
             else:
                 self.path = glob.glob(os.path.join(self.local_model_path, self.model_id, self.origin_file_pattern))
+
         if isinstance(self.path, list) and len(self.path) == 1:
             self.path = self.path[0]
 
