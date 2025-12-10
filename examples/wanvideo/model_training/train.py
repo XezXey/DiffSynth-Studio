@@ -8,7 +8,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 # os.environ["DIFFSYNTH_SKIP_DOWNLOAD"] = "true"
 
-
 class WanTrainingModule(DiffusionTrainingModule):
     def __init__(
         self,
