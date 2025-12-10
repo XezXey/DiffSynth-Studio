@@ -57,7 +57,7 @@ class WanVideoPipeline(BasePipeline):
             WanVideoUnit_PromptEmbedder(),
             WanVideoUnit_S2V(),
             WanVideoUnit_InputVideoEmbedder(),
-            WanVideoUnit_ImageEmbedderVAE(),
+            WanVideoUnit_ImageEmbedderVAE(),    # Embedded the image using VAE encoder (also includes the first-end frame if provided)
             WanVideoUnit_ImageEmbedderCLIP(),
             WanVideoUnit_ImageEmbedderFused(),
             WanVideoUnit_FunControl(),
@@ -352,6 +352,8 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
         if vace_reference_image is not None:
             f = len(vace_reference_image) if isinstance(vace_reference_image, list) else 1
             length += f
+        #NOTE: VAE's latent channel is 16
+        # (1, 16, 1+T/4, H/8, W/8)
         shape = (1, pipe.vae.model.z_dim, length, height // pipe.vae.upsampling_factor, width // pipe.vae.upsampling_factor)
         noise = pipe.generate_noise(shape, seed=seed, rand_device=rand_device)
         if vace_reference_image is not None:
@@ -361,6 +363,7 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
 
 
 class WanVideoUnit_InputVideoEmbedder(PipelineUnit):
+    #NOTE: The videos are preprocessed into latents here
     def __init__(self):
         super().__init__(
             input_params=("input_video", "noise", "tiled", "tile_size", "tile_stride", "vace_reference_image"),
@@ -410,6 +413,7 @@ class WanVideoUnit_PromptEmbedder(PipelineUnit):
 
     def process(self, pipe: WanVideoPipeline, prompt, positive) -> dict:
         pipe.load_models_to_device(self.onload_model_names)
+        # B, 512, 4096 from T5-XXL
         prompt_emb = self.encode_prompt(pipe, prompt)
         return {"context": prompt_emb}
 
@@ -439,6 +443,7 @@ class WanVideoUnit_ImageEmbedderCLIP(PipelineUnit):
 
 
 class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
+    # NOTE: The first frame (and last frame if provided) is encoded here using VAE encoder
     def __init__(self):
         super().__init__(
             input_params=("input_image", "end_image", "num_frames", "height", "width", "tiled", "tile_size", "tile_stride"),
@@ -451,22 +456,25 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
             return {}
         pipe.load_models_to_device(self.onload_model_names)
         image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
-        msk = torch.ones(1, num_frames, height//8, width//8, device=pipe.device)
+        # Binary Mask
+        msk = torch.ones(1, num_frames, height//8, width//8, device=pipe.device)    # (C=1, T, H, W)
         msk[:, 1:] = 0
+        # Zero-filled
         if end_image is not None:
             end_image = pipe.preprocess_image(end_image.resize((width, height))).to(pipe.device)
             vae_input = torch.concat([image.transpose(0,1), torch.zeros(3, num_frames-2, height, width).to(image.device), end_image.transpose(0,1)],dim=1)
             msk[:, -1:] = 1
         else:
+            # Concat first frame and zeros-filled frames
             vae_input = torch.concat([image.transpose(0, 1), torch.zeros(3, num_frames-1, height, width).to(image.device)], dim=1)
 
-        msk = torch.concat([torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1)
-        msk = msk.view(1, msk.shape[1] // 4, 4, height//8, width//8)
-        msk = msk.transpose(1, 2)[0]
+        msk = torch.concat([torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1) # [1, 1, H/8, W/8] -> [1, 4, H/8, W/8]
+        msk = msk.view(1, msk.shape[1] // 4, 4, height//8, width//8)    # 1, T/4, 4, H/8, W/8
+        msk = msk.transpose(1, 2)[0]    # 4, T/4, H/8, W/8
         
         y = pipe.vae.encode([vae_input.to(dtype=pipe.torch_dtype, device=pipe.device)], device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)[0]
         y = y.to(dtype=pipe.torch_dtype, device=pipe.device)
-        y = torch.concat([msk, y])
+        y = torch.concat([msk, y])  # mask + latents (VAE)
         y = y.unsqueeze(0)
         y = y.to(dtype=pipe.torch_dtype, device=pipe.device)
         return {"y": y}

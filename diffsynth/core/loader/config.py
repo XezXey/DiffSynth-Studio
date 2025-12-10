@@ -89,6 +89,7 @@ class ModelConfig:
     def reset_local_model_path(self):
         if os.environ.get('DIFFSYNTH_MODEL_BASE_PATH') is not None:
             self.local_model_path = os.environ.get('DIFFSYNTH_MODEL_BASE_PATH')
+            print(f"[#] Using DIFFSYNTH_MODEL_BASE_PATH: {self.local_model_path}")
         elif self.local_model_path is None:
             self.local_model_path = "./models"
 

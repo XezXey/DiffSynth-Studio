@@ -3,6 +3,10 @@ from diffsynth.core import UnifiedDataset
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 from diffsynth.diffusion import *
+# import debugpy
+# debugpy.listen(("0.0.0.0", 5678))
+# debugpy.wait_for_client()
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist-nas/ist-share/vision/modelscope/"
 os.environ["DIFFSYNTH_SKIP_DOWNLOAD"] = "true"
