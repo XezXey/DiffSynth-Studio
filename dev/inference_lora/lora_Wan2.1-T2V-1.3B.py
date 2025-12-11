@@ -21,7 +21,7 @@ vram_config = {
     "computation_dtype": torch.bfloat16,
     "computation_device": "cuda",
 }
-path = "/host/ist-nas/ist-share/vision/modelscope/Wan2.1-T2V-1.3B/"
+path = "/host/ist/ist-share/vision/huggingface_hub/Wan2.1-T2V-1.3B/"
 pipe = WanVideoPipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
     device="cuda",
@@ -35,12 +35,13 @@ pipe = WanVideoPipeline.from_pretrained(
     redirect_common_files=False,
 )
 
-pipe.load_lora(pipe.dit, '../models/train/Wan2.1-T2V-1.3B_lora/epoch-4.safetensors', alpha=1)
+pipe.load_lora(pipe.dit, args.lora_path, alpha=1)
 
 video = pipe(
     prompt="A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs Jumping Jack, captured from the front view.",
     negative_prompt="change in appearance, blurry, low resolution, low quality, overexposed, underexposed, washed out colors, artifacts, jpeg compression, distorted body, deformed limbs, extra limbs, extra fingers, missing fingers, fused fingers, poorly drawn hands, poorly rendered face, warped anatomy, unnatural pose, static frame, frozen motion, motion blur streaks, duplicated person, cluttered background, unrelated objects, text, subtitles, watermark, logo, three legs, many people in the background, incorrect perspective, unrealistic motion",
     seed=0, tiled=True,
+    height=128, width=256,
 )
 if os.path.exists(args.output_video):
     # Add timestamp to avoid overwriting

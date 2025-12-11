@@ -26,7 +26,8 @@ if __name__ == "__main__":
     data_path = args.data_path
     output_path = args.output_path
     os.makedirs(output_path, exist_ok=True)
-    df = pd.DataFrame(columns=['video', 'prompt'])
+    df_render = pd.DataFrame(columns=['video', 'prompt'])
+    df_combined = pd.DataFrame(columns=['video', 'prompt'])
     # Example path: /data/mint/Motion_Dataset/Mixamo/output_mixamo/<motion_name>/<camera_name>/
     # cam_0 = front view, cam_1 = right side view, cam_2 = back view, cam_3 = left side view
     motion_dirs = glob.glob(os.path.join(data_path, '*'))
@@ -51,13 +52,34 @@ if __name__ == "__main__":
                 input_path = os.path.join(cam, 'proj%04d.png').replace(' ', '\ ')
                 output_video_path = os.path.join(output_path, f'{vid_name}_proj.mp4').replace(' ', '\ ')
                 vid_from_frames(input_path, output_video_path)
-                
+            if not os.path.exists(f'{output_path}/{vid_name}_depth.mp4') and len(glob.glob(os.path.join(cam, 'depth*.png'))) > 0:
+                os.makedirs(f'{output_path}/', exist_ok=True)
+                # Create .mp4 from depth frames
+                input_path = os.path.join(cam, 'depth%04d.png').replace(' ', '\ ')
+                output_video_path = os.path.join(output_path, f'{vid_name}_depth.mp4').replace(' ', '\ ')
+                vid_from_frames(input_path, output_video_path)
+            if not os.path.exists(f'{output_path}/{vid_name}_combined.mp4') and os.path.exists(f'{output_path}/{vid_name}_render.mp4') and os.path.exists(f'{output_path}/{vid_name}_depth.mp4'):
+                os.makedirs(f'{output_path}/', exist_ok=True)
+                # Combine render, proj, depth videos side by side
+                render_path = os.path.join(output_path, f'{vid_name}_render.mp4').replace(' ', '\ ')
+                depth_path = os.path.join(output_path, f'{vid_name}_depth.mp4').replace(' ', '\ ')
+                output_video_path = os.path.join(output_path, f'{vid_name}_combined.mp4').replace(' ', '\ ')
+                cmd = f'ffmpeg -y -i {render_path} -i {depth_path} -filter_complex "[0:v][1:v]hstack=2" -c:v libx264 -pix_fmt yuv420p {output_video_path}'
+                os.system(cmd + " > /dev/null 2>&1")
             # Write metadata
             
             with open(os.path.join(output_path, 'metadata.csv'), 'a') as f:
                 cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
                 prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view."
                 vid_file = f"{vid_name}_render.mp4"
-                df = pd.concat([df, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
-    df.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
+                df_render = pd.concat([df_render, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
+
+            with open(os.path.join(output_path, 'metadata_combined.csv'), 'a') as f:
+                cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
+                prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view."
+                vid_file = f"{vid_name}_combined.mp4"
+                df_combined = pd.concat([df_combined, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
+    df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
+    df_combined.to_csv(os.path.join(output_path, 'metadata_combined.csv'), index=False)
+
             
