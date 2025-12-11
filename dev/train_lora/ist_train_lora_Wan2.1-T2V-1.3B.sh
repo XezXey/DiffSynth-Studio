@@ -4,8 +4,8 @@
   --height 384 \
   --width 384 \
   --dataset_repeat 100 \
-  --model_path '["/host/ist/ist-share/vision/huggingface_hub/Wan_AI/Wan2.1-T2V-1.3B/diffusion_pytorch_model.safetensors","/host/ist/ist-share/vision/huggingface_hub/Wan_AI/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth","/host/ist/ist-share/vision/huggingface_hub/Wan_AI/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth"]' \
-  --tokenizer_path "/host/ist/ist-share/vision/huggingface_hub/Wan_AI/Wan2.1-T2V-1.3B/google/umt5-xxl/" \
+  --model_path '["/host/ist/ist-share/vision/huggingface_hub/Wan-AI/Wan2.1-T2V-1.3B/diffusion_pytorch_model.safetensors","/host/ist/ist-share/vision/huggingface_hub/Wan-AI/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth","/host/ist/ist-share/vision/huggingface_hub/Wan-AI/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth"]' \
+  --tokenizer_path "/host/ist/ist-share/vision/huggingface_hub/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/" \
   --learning_rate 1e-4 \
   --num_epochs 10 \
   --remove_prefix_in_ckpt "pipe.dit." \
