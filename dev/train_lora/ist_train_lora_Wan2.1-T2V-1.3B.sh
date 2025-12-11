@@ -1,4 +1,4 @@
- CUDA_VISIBLE_DEVICES=1,2,3 accelerate launch ../../examples/wanvideo/model_training/train.py \
+ CUDA_VISIBLE_DEVICES=1,2,3 accelerate launch examples/wanvideo/model_training/train.py \
   --dataset_base_path /host/ist/users/puntawatp/Motion_Dataset/Mixamo/rdy_mixamo/ \
   --dataset_metadata_path /host/ist/users/puntawatp/Motion_Dataset/Mixamo/rdy_mixamo/metadata.csv \
   --height 384 \
