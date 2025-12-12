@@ -1,4 +1,5 @@
 import torch, types
+import torch as th
 import numpy as np
 from PIL import Image
 from einops import repeat
@@ -377,6 +378,9 @@ class WanVideoUnit_InputVideoEmbedder(PipelineUnit):
         pipe.load_models_to_device(self.onload_model_names)
         input_video = pipe.preprocess_video(input_video)
         input_latents = pipe.vae.encode(input_video, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
+        print(input_latents.shape)
+        th.save(input_latents, './input_latents.pt')
+        exit()
         if vace_reference_image is not None:
             if not isinstance(vace_reference_image, list):
                 vace_reference_image = [vace_reference_image]
