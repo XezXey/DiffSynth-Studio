@@ -363,7 +363,7 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
 
 
 class WanVideoUnit_InputVideoEmbedder(PipelineUnit):
-    #NOTE: The videos are preprocessed into latents here
+    #NOTE: The video's input are preprocessed into latents here
     def __init__(self):
         super().__init__(
             input_params=("input_video", "noise", "tiled", "tile_size", "tile_stride", "vace_reference_image"),
@@ -478,8 +478,6 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
         y = y.unsqueeze(0)
         y = y.to(dtype=pipe.torch_dtype, device=pipe.device)
         return {"y": y}
-
-
 
 class WanVideoUnit_ImageEmbedderFused(PipelineUnit):
     """
@@ -1238,9 +1236,10 @@ def model_fn_wan_video(
     # Motion Controller
     if motion_bucket_id is not None and motion_controller is not None:
         t_mod = t_mod + motion_controller(motion_bucket_id).unflatten(1, (6, dit.dim))
+    #NOTE: Text Embedding
     context = dit.text_embedding(context)
 
-    x = latents
+    x = latents # B x C x T x H x W; T= 1+t/4, H=h/8, W=w/8, c=vae.latent_dim
     # Merged cfg
     if x.shape[0] != context.shape[0]:
         x = torch.concat([x] * context.shape[0], dim=0)
