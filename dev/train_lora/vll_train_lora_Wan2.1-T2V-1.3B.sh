@@ -1,15 +1,15 @@
- CUDA_VISIBLE_DEVICES=1,2,3 accelerate launch examples/wanvideo/model_training/train.py \
+ CUDA_VISIBLE_DEVICES=1,2 accelerate launch examples/wanvideo/model_training/train.py \
   --dataset_base_path /host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo/ \
   --dataset_metadata_path /host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo/metadata_combined.csv \
-  --height 128 \
-  --width 256 \
+  --height 256 \
+  --width 512 \
   --dataset_repeat 100 \
   --model_path '["/host/ist-nas/ist-share/vision/modelscope/Wan2.1-T2V-1.3B/diffusion_pytorch_model.safetensors","/host/ist-nas/ist-share/vision/modelscope/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth","/host/ist-nas/ist-share/vision/modelscope/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth"]' \
   --tokenizer_path "/host/ist-nas/ist-share/vision/modelscope/Wan2.1-T2V-1.3B/google/umt5-xxl/" \
   --learning_rate 1e-4 \
   --num_epochs 100 \
   --remove_prefix_in_ckpt "pipe.dit." \
-  --output_path "/host/data/mint/Skelag_ckpt/train/Wan2.1-T2V-1.3B_lora/no_kpts" \
+  --output_path "/host/data/mint/Skelag_ckpt/train/Wan2.1-T2V-1.3B_lora/spatial_cat" \
   --lora_base_model "dit" \
   --lora_target_modules "q,k,v,o,ffn.0,ffn.2" \
   --lora_rank 32 \

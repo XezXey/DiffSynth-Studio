@@ -26,11 +26,8 @@ pipe = WanVideoPipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
     device="cuda",
     model_configs=[
-        ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
-        ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
         ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="Wan2.1_VAE.pth", **vram_config),
     ],
-    tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/", **vram_config),
     vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 2,
     redirect_common_files=False,
 )
@@ -50,4 +47,3 @@ if os.path.exists(args.output_video):
 else:
     save_name = args.output_video
 
-save_video(video, save_name, fps=15, quality=5)
