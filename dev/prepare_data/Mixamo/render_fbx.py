@@ -388,7 +388,7 @@ if __name__ == "__main__":
             base_outpath=f"{args.out_dir}/{os.path.basename(f).split('.')[0]}/",
             armature_name="Armature",
             follow_bone_name=args.follow_bone,   # or "mixamorig:Hips"
-            resolution=(512, 512),
+            resolution=(args.img_width, args.img_height),
             num_cams=args.n_cam,
             radius=args.cam_radius,
             height=args.cam_height,

@@ -1,8 +1,10 @@
 import torch
+import os
 from PIL import Image
 from diffsynth.utils.data import save_video
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 from modelscope import dataset_snapshot_download
+os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 
 pipe = WanVideoPipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
@@ -14,6 +16,7 @@ pipe = WanVideoPipeline.from_pretrained(
         ModelConfig(model_id="Wan-AI/Wan2.2-I2V-A14B", origin_file_pattern="Wan2.1_VAE.pth"),
     ],
     tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
+    redirect_common_files=False
 )
 
 dataset_snapshot_download(
