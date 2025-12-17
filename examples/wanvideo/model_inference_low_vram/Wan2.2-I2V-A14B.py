@@ -1,8 +1,10 @@
 import torch
+import os
 from PIL import Image
 from diffsynth.utils.data import save_video
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 from modelscope import dataset_snapshot_download
+os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 
 vram_config = {
     "offload_dtype": "disk",
@@ -25,6 +27,7 @@ pipe = WanVideoPipeline.from_pretrained(
     ],
     tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
     vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 2,
+    redirect_common_files=False
 )
 
 dataset_snapshot_download(
