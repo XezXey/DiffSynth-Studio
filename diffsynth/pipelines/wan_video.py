@@ -378,9 +378,9 @@ class WanVideoUnit_InputVideoEmbedder(PipelineUnit):
         pipe.load_models_to_device(self.onload_model_names)
         input_video = pipe.preprocess_video(input_video)
         input_latents = pipe.vae.encode(input_video, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
-        print(input_latents.shape)
-        th.save(input_latents, './input_latents.pt')
-        exit()
+        #NOTE: Video shape: (1, C=3, T, H, W)
+        #NOTE: Latents shape: (1, C=16, T/4, H/8, W/8)
+
         if vace_reference_image is not None:
             if not isinstance(vace_reference_image, list):
                 vace_reference_image = [vace_reference_image]
@@ -1266,6 +1266,7 @@ def model_fn_wan_video(
     
     # Patchify
     f, h, w = x.shape[2:]
+    #NOTE: Flatten the spatio-temporal dimensions
     x = rearrange(x, 'b c f h w -> b (f h w) c').contiguous()
     
     # Reference image
@@ -1276,6 +1277,7 @@ def model_fn_wan_video(
         x = torch.concat([reference_latents, x], dim=1)
         f += 1
     
+    # Follow the shape of patch embeddings (f, h, w)
     freqs = torch.cat([
         dit.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
         dit.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
@@ -1383,7 +1385,7 @@ def model_fn_wan_video(
         if tea_cache is not None:
             tea_cache.store(x)
             
-    x = dit.head(x, t)
+    x = dit.head(x, t)  #Note: Project from D=1536 to out_features (vae.latent_dim)
     if use_unified_sequence_parallel:
         if dist.is_initialized() and dist.get_world_size() > 1:
             x = get_sp_group().all_gather(x, dim=1)

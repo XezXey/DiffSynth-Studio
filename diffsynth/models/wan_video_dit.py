@@ -211,9 +211,14 @@ class DiTBlock(nn.Module):
         self.gate = GateModule()
 
     def forward(self, x, context, t_mod, freqs):
+        """
+        #NOTE: Shape annotations
+        #NOTE: t_mod shape: (B, 6, D); B=1
+        #NOTE: self.modulation shape: (B, 6, D); B=1
+        """
         has_seq = len(t_mod.shape) == 4
         chunk_dim = 2 if has_seq else 1
-        # msa: multi-head self-attention  mlp: multi-layer perceptron
+        #NOTE: msa: multi-head self-attention  mlp: multi-layer perceptron
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=chunk_dim)
         if has_seq:
@@ -221,11 +226,12 @@ class DiTBlock(nn.Module):
                 shift_msa.squeeze(2), scale_msa.squeeze(2), gate_msa.squeeze(2),
                 shift_mlp.squeeze(2), scale_mlp.squeeze(2), gate_mlp.squeeze(2),
             )
-        input_x = modulate(self.norm1(x), shift_msa, scale_msa)
+        input_x = modulate(self.norm1(x), shift_msa, scale_msa) #NOTE: NORM + MODULATION = AdaLN
         x = self.gate(x, gate_msa, self.self_attn(input_x, freqs))
         x = x + self.cross_attn(self.norm3(x), context)
         input_x = modulate(self.norm2(x), shift_mlp, scale_mlp)
         x = self.gate(x, gate_mlp, self.ffn(input_x))
+        #NOTE: x shape: (B, C, D); C is TxH'xW' which is flattened spatial-temporal dimension
         return x
 
 
@@ -251,6 +257,7 @@ class MLP(torch.nn.Module):
 
 class Head(nn.Module):
     def __init__(self, dim: int, out_dim: int, patch_size: Tuple[int, int, int], eps: float):
+        #NOTE: LayerNorm(AdaLN) + Linear projection
         super().__init__()
         self.dim = dim
         self.patch_size = patch_size
@@ -316,6 +323,8 @@ class WanModel(torch.nn.Module):
         )
         self.time_projection = nn.Sequential(
             nn.SiLU(), nn.Linear(dim, dim * 6))
+        
+        #NOTE: DiT Blocks
         self.blocks = nn.ModuleList([
             DiTBlock(has_image_input, dim, num_heads, ffn_dim, eps)
             for _ in range(num_layers)
@@ -336,6 +345,15 @@ class WanModel(torch.nn.Module):
             self.control_adapter = None
 
     def patchify(self, x: torch.Tensor, control_camera_latents_input: Optional[torch.Tensor] = None):
+        """
+        #NOTE: From paper: 
+        #NOTE: x is the "input_latents" variable in the pipeline after VAE compression
+        # In the patchifying module, we use
+        # a 3D convolution with a kernel size of (1, 2, 2) and apply
+        # a flattening operation to convert x into a sequence of features with the shape of (B, L, D), where B denotes the
+        # batch size, L = (1 + T /4) × H/16 × W/16 represents (it's essentially (H/8)/2 and (W/8)/2)
+        # the sequence length, and D indicates the latent dimension.
+        """
         x = self.patch_embedding(x)
         if self.control_adapter is not None and control_camera_latents_input is not None:
             y_camera = self.control_adapter(control_camera_latents_input)
@@ -370,7 +388,9 @@ class WanModel(torch.nn.Module):
             clip_embdding = self.img_emb(clip_feature)
             context = torch.cat([clip_embdding, context], dim=1)
         
+        print("Input x shape:", x.shape)
         x, (f, h, w) = self.patchify(x)
+        print("x patchified shape:", x.shape)
         
         freqs = torch.cat([
             self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
@@ -392,15 +412,21 @@ class WanModel(torch.nn.Module):
                             x, context, t_mod, freqs,
                             use_reentrant=False,
                         )
+                    print("x shape after block with offload:", x.shape)
                 else:
                     x = torch.utils.checkpoint.checkpoint(
                         create_custom_forward(block),
                         x, context, t_mod, freqs,
                         use_reentrant=False,
                     )
+                    print("x shape after block with checkpointing:", x.shape)
             else:
                 x = block(x, context, t_mod, freqs)
+                print("x shape after block:", x.shape)
 
+        print("Head input shape before unpatchify:", x.shape)
         x = self.head(x, t)
+        print("Head output shape before unpatchify:", x.shape)
         x = self.unpatchify(x, (f, h, w))
+        print("Final output x shape:", x.shape)
         return x

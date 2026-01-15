@@ -124,6 +124,7 @@ class LoadVideo(DataProcessingOperator):
         num_frames = self.get_num_frames(reader)
         frames = []
         for frame_id in range(num_frames):
+            print(frame_id)
             frame = reader.get_data(frame_id)
             frame = Image.fromarray(frame)
             frame = self.frame_processor(frame)

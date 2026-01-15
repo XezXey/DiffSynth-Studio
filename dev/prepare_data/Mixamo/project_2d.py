@@ -39,6 +39,7 @@ def project2d(path):
         ],
         dtype=np.float32,
     )  # (3, 3)
+    H, W = int(cy * 2), int(cx * 2)
 
     # -----------------------------
     # 3) Extrinsics: Blender → OpenCV camera
@@ -86,9 +87,9 @@ def project2d(path):
     T, J, _ = j2d.shape
     for ti in range(T):
         # Plot 2D joints on transparent canvas
-        canvas = np.ones((512, 512, 4), dtype=np.float32)
+        canvas = np.ones((H, W, 4), dtype=np.float32)
         canvas[..., 3] = 0.0  # make transparent
-        depth_canvas = np.ones((512, 512, 4), dtype=np.float32)
+        depth_canvas = np.ones((H, W, 4), dtype=np.float32)
         depth_canvas[..., 3] = 0.0  # make transparent
         depth_value = j2d[ti, :, 2] - np.min(j2d[ti, :, 2])
         depth_value = depth_value / (np.max(depth_value) + 1e-8)
@@ -106,7 +107,7 @@ def project2d(path):
                 
             x0, y0 = j2d[ti, start_idx][:2]
             x1, y1 = j2d[ti, end_idx][:2]
-            if (0 <= x0 < 512 and 0 <= y0 < 512 and 0 <= x1 < 512 and 0 <= y1 < 512):
+            if (0 <= x0 < W and 0 <= y0 < H and 0 <= x1 < W and 0 <= y1 < H):
                 cv2.line(
                     canvas,
                     pt1=(int(x0), int(y0)),
@@ -124,7 +125,7 @@ def project2d(path):
         
         for tj in range(J):
             x, y = j2d[ti, tj][:2]
-            if 0 <= x < 512 and 0 <= y < 512:
+            if 0 <= x < W and 0 <= y < H:
                 # Draw joint
                 cv2.circle(
                     canvas,

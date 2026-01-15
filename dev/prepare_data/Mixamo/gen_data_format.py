@@ -20,6 +20,7 @@ args = parser.parse_args()
 
 def vid_from_frames(input_path, output_video_path):
     cmd = f'ffmpeg -y -framerate 30 -i {input_path} -c:v libx264 -pix_fmt yuv420p {output_video_path}'
+    print(input_path, output_video_path)
     os.system(cmd + " > /dev/null 2>&1")
 
 if __name__ == "__main__":
