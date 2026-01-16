@@ -13,7 +13,7 @@
             "justMyCode": false,
             "pathMappings": [
                 {
-                    "localRoot": "/ist-nas/users/supasorn/conda_envs",
+                    "localRoot": "/ist-nas/users/puntawatp/conda_envs",
                     "remoteRoot": "/conda_envs"
                 },
                 {
