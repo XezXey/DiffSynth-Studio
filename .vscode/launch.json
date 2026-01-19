@@ -3,12 +3,33 @@
     "configurations": [
 
         {
-            "name": "Python Debugger: Remote Attach",
+            "name": "Python Debugger: 5678",
             "type": "debugpy",
             "request": "attach",
             "connect": {
                 "host": "localhost",
                 "port": 5678
+            },
+            "justMyCode": false,
+            "pathMappings": [
+                {
+                    "localRoot": "/ist-nas/users/puntawatp/conda_envs",
+                    "remoteRoot": "/conda_envs"
+                },
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "."
+                }
+
+            ]
+        },
+        {
+            "name": "Python Debugger: 5679",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5679
             },
             "justMyCode": false,
             "pathMappings": [

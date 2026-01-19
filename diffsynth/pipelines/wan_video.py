@@ -277,6 +277,7 @@ class WanVideoPipeline(BasePipeline):
             "vap_video": vap_video, 
         }
         for unit in self.units:
+            print(unit)
             inputs_shared, inputs_posi, inputs_nega = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
 
         # Denoise
@@ -502,8 +503,6 @@ class WanVideoUnit_ImageEmbedderFused(PipelineUnit):
         z = pipe.vae.encode([image], device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)
         latents[:, :, 0: 1] = z
         return {"latents": latents, "fuse_vae_embedding_in_latents": True, "first_frame_latents": z}
-
-
 
 class WanVideoUnit_FunControl(PipelineUnit):
     def __init__(self):

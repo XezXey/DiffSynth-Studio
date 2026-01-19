@@ -393,9 +393,9 @@ class WanModel(torch.nn.Module):
             clip_embdding = self.img_emb(clip_feature)
             context = torch.cat([clip_embdding, context], dim=1)
         
-        print("Input x shape:", x.shape)
+        # print("Input x shape:", x.shape)
         x, (f, h, w) = self.patchify(x)
-        print("x patchified shape:", x.shape)
+        # print("x patchified shape:", x.shape)
         
         freqs = torch.cat([
             self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
