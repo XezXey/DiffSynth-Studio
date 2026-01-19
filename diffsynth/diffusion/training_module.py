@@ -14,6 +14,10 @@ class DiffusionTrainingModule(torch.nn.Module):
             model.to(*args, **kwargs)
         return self
         
+    def force_no_grad(self):
+        self.eval()
+        for param in self.parameters():
+            param.requires_grad = False
         
     def trainable_modules(self):
         trainable_modules = filter(lambda p: p.requires_grad, self.parameters())

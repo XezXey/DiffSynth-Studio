@@ -309,14 +309,6 @@ class WanVideoPipeline(BasePipeline):
             if "first_frame_latents" in inputs_shared:
                 inputs_shared["latents"][:, :, 0:1] = inputs_shared["first_frame_latents"]
         
-        # VACE (TODO: remove it)
-        if vace_reference_image is not None or (animate_pose_video is not None and animate_face_video is not None):
-            if vace_reference_image is not None and isinstance(vace_reference_image, list):
-                f = len(vace_reference_image)
-            else:
-                f = 1
-            inputs_shared["latents"] = inputs_shared["latents"][:, :, f:]
-        # post-denoising, pre-decoding processing logic
         for unit in self.post_units:
             inputs_shared, _, _ = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
         # Decode

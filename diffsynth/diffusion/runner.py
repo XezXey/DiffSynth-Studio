@@ -16,6 +16,7 @@ def launch_training_task(
     save_steps: int = None,
     num_epochs: int = 1,
     args = None,
+    extra_modules = None,
 ):
     if args is not None:
         learning_rate = args.learning_rate
