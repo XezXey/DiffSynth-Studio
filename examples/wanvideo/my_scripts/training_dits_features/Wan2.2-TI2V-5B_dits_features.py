@@ -62,7 +62,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.fp8_models = fp8_models
         self.task = task
         self.task_to_loss = {
-            "dit_features:train": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, **inputs_shared, **inputs_posi),
+            "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, **inputs_shared, **inputs_posi),
         }
         self.max_timestep_boundary = max_timestep_boundary
         self.min_timestep_boundary = min_timestep_boundary
@@ -71,6 +71,11 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.force_no_grad()
 
         self.extra_modules = torch.nn.Linear(10, 10).requires_grad_(True)
+        # Training mode
+        self.switch_pipe_to_training_mode(
+            self.pipe,
+            task="dit_features",
+        )
 
 
         
