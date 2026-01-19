@@ -35,6 +35,8 @@ class WanTrainingModule(DiffusionTrainingModule):
     def __init__(
         self,
         pipe: WanVideoPipeline,
+        preferred_timestep=[0.0],   # Use last timestep by default to train on dit features
+        preferred_dit_block_id=[-1],    # Use last block by default to train on dit features
         use_gradient_checkpointing=True,
         use_gradient_checkpointing_offload=False,
         extra_inputs=None,
@@ -44,6 +46,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         task="sft",
         max_timestep_boundary=1.0,
         min_timestep_boundary=0.0,
+
     ):
         super().__init__()
         # Warning
@@ -67,10 +70,13 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.max_timestep_boundary = max_timestep_boundary
         self.min_timestep_boundary = min_timestep_boundary
 
+        self.preferred_timestep = preferred_timestep
+        self.preferred_dit_block_id = preferred_dit_block_id
+
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        self.extra_modules = torch.nn.Linear(10, 10).requires_grad_(True)
+        self.extra_modules = 
         # Training mode
         self.switch_pipe_to_training_mode(
             self.pipe,
