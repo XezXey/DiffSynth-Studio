@@ -81,6 +81,9 @@ class WanVideoPipeline(BasePipeline):
         ]
         self.model_fn = model_fn_wan_video
 
+        #NOTE: Misc
+        self.device=device
+
 
     def enable_usp(self):
         from ..utils.xfuser import get_sequence_parallel_world_size, usp_attn_forward, usp_dit_forward

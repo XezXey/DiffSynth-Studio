@@ -3,6 +3,7 @@ from PIL import Image
 from diffsynth.utils.data import save_video
 from diffsynth.core import UnifiedDataset
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
+from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionVAEDecoder
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
@@ -63,10 +64,6 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.use_gradient_checkpointing_offload = use_gradient_checkpointing_offload
         self.extra_inputs = extra_inputs.split(",") if extra_inputs is not None else []
         self.fp8_models = fp8_models
-        self.task = task
-        self.task_to_loss = {
-            "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, **inputs_shared, **inputs_posi),
-        }
         self.max_timestep_boundary = max_timestep_boundary
         self.min_timestep_boundary = min_timestep_boundary
 
@@ -76,12 +73,25 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        self.extra_modules = 
+        self.extra_modules = JointHeatMapMotionVAEDecoder(
+            n_joints=23,
+            dit_dim=pipe.dit.dim,
+            head_out_dim=pipe.dit.out_dim,
+            flatten_dim=256, #TODO: Fix this!!!
+            vae_latent_dim=pipe.vae.z_dim,
+            patch_size=pipe.dit.patch_size,
+            device=pipe.device
+        )
         # Training mode
         self.switch_pipe_to_training_mode(
             self.pipe,
             task="dit_features",
         )
+
+        self.task = task
+        self.task_to_loss = {
+            "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, preferred_timestep=self.preferred_timestep, preferred_dit_block_id=self.preferred_dit_block_id, **inputs_shared, **inputs_posi),
+        }
 
 
         

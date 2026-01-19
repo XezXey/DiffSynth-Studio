@@ -1,7 +1,7 @@
 from .base_pipeline import BasePipeline
 import torch
 
-def TrainingOnDitFeaturesLoss(pipe: BasePipeline, **inputs):
+def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, preferred_timestep=[0.0], preferred_dit_block_id=[-1], **inputs):
     max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * len(pipe.scheduler.timesteps))
     min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))
 

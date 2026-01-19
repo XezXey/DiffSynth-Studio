@@ -4,19 +4,20 @@ from diffsynth.models.wan_video_vae import Decoder3d, WanVideoVAE
 import tqdm
 
 class JointHeatMapMotionVAEDecoder(th.nn.Module):
-    def __init__(self, n_joints, dit_dim, out_dim, flatten_dim, vae_latent_dim, device, out_channels=2, num_heads=12):
+    def __init__(self, n_joints, dit_dim, head_out_dim, flatten_dim, vae_latent_dim, patch_size, device, out_channels=2, num_heads=12):
         super().__init__()
         self.J = n_joints
         self.dit_dim = dit_dim
         self.vae_latent_dim = vae_latent_dim
         self.out_joint_map_channels = out_channels
         self.num_heads = num_heads
+        self.patch_size = patch_size
         #TODO: Figure out the flatten dim calculation from flattened dit features
         self.flatten_dim = flatten_dim
         
         self.self_attn = SelfAttention(dim=dit_dim, num_heads=num_heads).to(device)
         self.decoder = Decoder3d().to(device)
-        self.ffn_out = th.nn.Linear(dit_dim, out_dim).to(device)
+        self.ffn_out = th.nn.Linear(dit_dim, head_out_dim).to(device)
         self.joint_head = th.nn.Linear(flatten_dim, flatten_dim * self.out_joint_map_channels)
         self.device = device
 
@@ -51,9 +52,10 @@ class JointHeatMapMotionVAEDecoder(th.nn.Module):
         )
         final_joint_map = []
         for i in tqdm.tqdm(range(self.J), desc="Decoding joint heat maps"):
-            joint_heat_map = self.video_vae.decode(joint_map_unpatch[0:1, i, ...], device=self.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride))
+            joint_heat_map = self.video_vae.decode(joint_map_unpatch[0:1, i, ...], device=self.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)
             final_joint_map.append(joint_heat_map)
-        
+
+        return final_joint_map
         
 
 
