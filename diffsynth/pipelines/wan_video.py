@@ -1386,7 +1386,7 @@ def model_fn_wan_video_return_features(
         x = x[:, reference_latents.shape[1]:]
         f -= 1
     x = dit.unpatchify(x, (f, h, w))
-    return x, {'dit_features':dit_features, 'grid_size':(f,h,w)}
+    return x, {'dit_features':torch.stack(dit_features), 'grid_size':(f,h,w)}
 
 
 def model_fn_wan_video(

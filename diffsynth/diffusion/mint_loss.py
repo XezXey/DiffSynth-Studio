@@ -21,6 +21,12 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
     noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
 
+    dit_features = return_dict.get("dit_features", None)
+    grid_size = return_dict.get("grid_size", None)
+    assert dit_features is not None, "Dit features not returned from model_fn."
+    assert grid_size is not None, "Grid size not returned from model_fn."
+
+    joint_map_pred = extra_modules(dit_features, grid_size)
     
     loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
     loss = loss * pipe.scheduler.training_weight(timestep)
