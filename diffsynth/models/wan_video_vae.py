@@ -965,7 +965,7 @@ class VideoVAE_(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.attn_scales = attn_scales
         self.temperal_downsample = temperal_downsample
-        self.temperal_upsample = temperal_downsample[::-1]
+        self.temperal_upsample = temperal_downsample[::-1]  # reverse = [True, True, False]
 
         # modules
         self.encoder = Encoder3d(dim, z_dim * 2, dim_mult, num_res_blocks,
