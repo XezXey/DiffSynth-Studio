@@ -120,7 +120,12 @@ class WanTrainingModule(DiffusionTrainingModule):
             # Please do not modify the following parameters
             # unless you clearly know what this will cause.
             "cfg_scale": 1,
-            "tiled": False,
+            "tiled": True,
+            "tile_size": (30, 52),
+            "tile_stride": (15, 26),
+            # tiled: Optional[bool] = True,
+            # tile_size: Optional[tuple[int, int]] = (30, 52),
+            # tile_stride: Optional[tuple[int, int]] = (15, 26),
             "rand_device": self.pipe.device,
             "use_gradient_checkpointing": self.use_gradient_checkpointing,
             "use_gradient_checkpointing_offload": self.use_gradient_checkpointing_offload,
