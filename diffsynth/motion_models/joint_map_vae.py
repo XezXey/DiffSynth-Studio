@@ -4,7 +4,7 @@ from diffsynth.models.wan_video_vae import Decoder3d, WanVideoVAE
 import tqdm
 
 class JointHeatMapMotionVAEDecoder(th.nn.Module):
-    def __init__(self, n_joints, dit_dim, head_out_dim, flatten_dim, vae_latent_dim, patch_size, device, out_channels=2, num_heads=12):
+    def __init__(self, n_joints, dit_dim, head_out_dim, flatten_dim, vae_latent_dim, patch_size, grid_size, device, out_channels=2, num_heads=12):
         super().__init__()
         self.J = n_joints
         self.dit_dim = dit_dim
@@ -23,7 +23,7 @@ class JointHeatMapMotionVAEDecoder(th.nn.Module):
 
 
     
-    def forward(self, dit_features, grid_size, patch_size):
+    def forward(self, dit_features, grid_size):
         """
         dit_features: (n, b, f, d); 
             - n: num of features from DIT blocks (#Preferred dit block id * #Preferred timesteps),
@@ -48,7 +48,7 @@ class JointHeatMapMotionVAEDecoder(th.nn.Module):
         joint_map_unpatch = rearrange(
             joint_map_pred, 'b j (f h w) (x y z c) -> b j c (f x) (h y) (w z)',
             f=grid_size[0], h=grid_size[1], w=grid_size[2], 
-            x=patch_size[0], y=patch_size[1], z=patch_size[2], j = self.J
+            x=self.patch_size[0], y=self.patch_size[1], z=self.patch_size[2], j = self.J
         )
         final_joint_map = []
         for i in tqdm.tqdm(range(self.J), desc="Decoding joint heat maps"):

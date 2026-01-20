@@ -31,7 +31,7 @@ from ..models.longcat_video_dit import LongCatVideoTransformer3DModel
 
 class WanVideoPipeline(BasePipeline):
 
-    def __init__(self, device="cuda", torch_dtype=torch.bfloat16):
+    def __init__(self, device="cuda", torch_dtype=torch.bfloat16, return_features=False):
         super().__init__(
             device=device, torch_dtype=torch_dtype,
             height_division_factor=16, width_division_factor=16, time_division_factor=4, time_division_remainder=1
@@ -79,7 +79,12 @@ class WanVideoPipeline(BasePipeline):
         self.post_units = [
             WanVideoPostUnit_S2V(),
         ]
-        self.model_fn = model_fn_wan_video
+        if return_features:
+            print("(Mint's revoke) Using WanVideoPipeline with return_features=True, the model_fn is set to return DIT features.")
+            self.model_fn = model_fn_wan_video_return_features
+        else:
+            print("(Default) Using WanVideoPipeline with return_features=False, the model_fn is set to return noise prediction.")
+            self.model_fn = model_fn_wan_video
 
         #NOTE: Misc
         self.device=device
@@ -109,6 +114,7 @@ class WanVideoPipeline(BasePipeline):
         redirect_common_files: bool = True,
         use_usp: bool = False,
         vram_limit: float = None,
+        return_features: bool = False,
     ):
         # Redirect model path
         if redirect_common_files:
@@ -127,7 +133,7 @@ class WanVideoPipeline(BasePipeline):
                     model_config.origin_file_pattern = redirect_dict[model_config.origin_file_pattern][1]
         
         # Initialize pipeline
-        pipe = WanVideoPipeline(device=device, torch_dtype=torch_dtype)
+        pipe = WanVideoPipeline(device=device, torch_dtype=torch_dtype, return_features=return_features)
         if use_usp:
             from ..utils.xfuser import initialize_usp
             initialize_usp()
@@ -1118,6 +1124,269 @@ class TemporalTiler_BCTHW:
         model_kwargs.update(tensor_dict)
         return value
 
+def model_fn_wan_video_return_features(
+    dit: WanModel,
+    motion_controller: WanMotionControllerModel = None,
+    vace: VaceWanModel = None,
+    vap: MotWanModel = None,
+    animate_adapter: WanAnimateAdapter = None,
+    latents: torch.Tensor = None,
+    timestep: torch.Tensor = None,
+    context: torch.Tensor = None,
+    clip_feature: Optional[torch.Tensor] = None,
+    y: Optional[torch.Tensor] = None,
+    reference_latents = None,
+    vace_context = None,
+    vace_scale = 1.0,
+    audio_embeds: Optional[torch.Tensor] = None,
+    motion_latents: Optional[torch.Tensor] = None,
+    s2v_pose_latents: Optional[torch.Tensor] = None,
+    vap_hidden_state = None,
+    vap_clip_feature = None,
+    context_vap = None,
+    drop_motion_frames: bool = True,
+    tea_cache: TeaCache = None,
+    use_unified_sequence_parallel: bool = False,
+    motion_bucket_id: Optional[torch.Tensor] = None,
+    pose_latents=None,
+    face_pixel_values=None,
+    longcat_latents=None,
+    sliding_window_size: Optional[int] = None,
+    sliding_window_stride: Optional[int] = None,
+    cfg_merge: bool = False,
+    use_gradient_checkpointing: bool = False,
+    use_gradient_checkpointing_offload: bool = False,
+    control_camera_latents_input = None,
+    fuse_vae_embedding_in_latents: bool = False,
+    **kwargs,
+):
+    if sliding_window_size is not None and sliding_window_stride is not None:
+        model_kwargs = dict(
+            dit=dit,
+            motion_controller=motion_controller,
+            vace=vace,
+            latents=latents,
+            timestep=timestep,
+            context=context,
+            clip_feature=clip_feature,
+            y=y,
+            reference_latents=reference_latents,
+            vace_context=vace_context,
+            vace_scale=vace_scale,
+            tea_cache=tea_cache,
+            use_unified_sequence_parallel=use_unified_sequence_parallel,
+            motion_bucket_id=motion_bucket_id,
+        )
+        return TemporalTiler_BCTHW().run(
+            model_fn_wan_video,
+            sliding_window_size, sliding_window_stride,
+            latents.device, latents.dtype,
+            model_kwargs=model_kwargs,
+            tensor_names=["latents", "y"],
+            batch_size=2 if cfg_merge else 1
+        )
+    # LongCat-Video
+    if isinstance(dit, LongCatVideoTransformer3DModel):
+        return model_fn_longcat_video(
+            dit=dit,
+            latents=latents,
+            timestep=timestep,
+            context=context,
+            longcat_latents=longcat_latents,
+            use_gradient_checkpointing=use_gradient_checkpointing,
+            use_gradient_checkpointing_offload=use_gradient_checkpointing_offload,
+        )
+        
+    if use_unified_sequence_parallel:
+        import torch.distributed as dist
+        from xfuser.core.distributed import (get_sequence_parallel_rank,
+                                            get_sequence_parallel_world_size,
+                                            get_sp_group)
+
+    # Timestep
+    if dit.seperated_timestep and fuse_vae_embedding_in_latents:
+        timestep = torch.concat([
+            torch.zeros((1, latents.shape[3] * latents.shape[4] // 4), dtype=latents.dtype, device=latents.device),
+            torch.ones((latents.shape[2] - 1, latents.shape[3] * latents.shape[4] // 4), dtype=latents.dtype, device=latents.device) * timestep
+        ]).flatten()
+        t = dit.time_embedding(sinusoidal_embedding_1d(dit.freq_dim, timestep).unsqueeze(0))
+        if use_unified_sequence_parallel and dist.is_initialized() and dist.get_world_size() > 1:
+            t_chunks = torch.chunk(t, get_sequence_parallel_world_size(), dim=1)
+            t_chunks = [torch.nn.functional.pad(chunk, (0, 0, 0, t_chunks[0].shape[1]-chunk.shape[1]), value=0) for chunk in t_chunks]
+            t = t_chunks[get_sequence_parallel_rank()]
+        t_mod = dit.time_projection(t).unflatten(2, (6, dit.dim))
+    else:
+        t = dit.time_embedding(sinusoidal_embedding_1d(dit.freq_dim, timestep))
+        t_mod = dit.time_projection(t).unflatten(1, (6, dit.dim))
+    
+    # Motion Controller
+    if motion_bucket_id is not None and motion_controller is not None:
+        t_mod = t_mod + motion_controller(motion_bucket_id).unflatten(1, (6, dit.dim))
+    #NOTE: Text Embedding
+    context = dit.text_embedding(context)
+
+    x = latents # B x C x T x H x W; T= 1+t/4, H=h/8, W=w/8, c=vae.latent_dim
+    # Merged cfg
+    if x.shape[0] != context.shape[0]:
+        x = torch.concat([x] * context.shape[0], dim=0)
+    if timestep.shape[0] != context.shape[0]:
+        timestep = torch.concat([timestep] * context.shape[0], dim=0)
+
+    # Image Embedding
+    if y is not None and dit.require_vae_embedding:
+        x = torch.cat([x, y], dim=1)
+    if clip_feature is not None and dit.require_clip_embedding:
+        clip_embdding = dit.img_emb(clip_feature)
+        context = torch.cat([clip_embdding, context], dim=1)
+        
+    # Camera control
+    x = dit.patchify(x, control_camera_latents_input)
+    
+    # Animate
+    if pose_latents is not None and face_pixel_values is not None:
+        x, motion_vec = animate_adapter.after_patch_embedding(x, pose_latents, face_pixel_values)
+    
+    # Patchify
+    f, h, w = x.shape[2:]
+    #NOTE: Flatten the spatio-temporal dimensions
+    x = rearrange(x, 'b c f h w -> b (f h w) c').contiguous()
+    
+    # Reference image
+    if reference_latents is not None:
+        if len(reference_latents.shape) == 5:
+            reference_latents = reference_latents[:, :, 0]
+        reference_latents = dit.ref_conv(reference_latents).flatten(2).transpose(1, 2)
+        x = torch.concat([reference_latents, x], dim=1)
+        f += 1
+    
+    # Follow the shape of patch embeddings (f, h, w)
+    freqs = torch.cat([
+        dit.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
+        dit.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
+        dit.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
+    ], dim=-1).reshape(f * h * w, 1, -1).to(x.device)
+
+    # VAP 
+    if vap is not None:
+        # hidden state
+        x_vap = vap_hidden_state
+        x_vap = vap.patchify(x_vap)
+        x_vap = rearrange(x_vap, 'b c f h w -> b (f h w) c').contiguous()
+        # Timestep
+        clean_timestep = torch.ones(timestep.shape, device=timestep.device).to(timestep.dtype)
+        t = vap.time_embedding(sinusoidal_embedding_1d(vap.freq_dim, clean_timestep))
+        t_mod_vap = vap.time_projection(t).unflatten(1, (6, vap.dim))
+
+        # rope
+        freqs_vap = vap.compute_freqs_mot(f,h,w).to(x.device)
+
+        # context
+        vap_clip_embedding = vap.img_emb(vap_clip_feature)
+        context_vap = vap.text_embedding(context_vap)
+        context_vap = torch.cat([vap_clip_embedding, context_vap], dim=1)
+    
+    # TeaCache
+    if tea_cache is not None:
+        tea_cache_update = tea_cache.check(dit, x, t_mod)
+    else:
+        tea_cache_update = False
+        
+    if vace_context is not None:
+        vace_hints = vace(
+            x, vace_context, context, t_mod, freqs,
+            use_gradient_checkpointing=use_gradient_checkpointing,
+            use_gradient_checkpointing_offload=use_gradient_checkpointing_offload
+        )
+    
+    #NOTE: Added for support dit's feature return
+    preferred_dit_block_id = kwargs.get("preferred_dit_block_id", [-1])
+    if preferred_dit_block_id == [-1]: preferred_dit_block_id = [len(dit.blocks) - 1]
+    dit_features = []
+
+    # blocks
+    if use_unified_sequence_parallel:
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            chunks = torch.chunk(x, get_sequence_parallel_world_size(), dim=1)
+            pad_shape = chunks[0].shape[1] - chunks[-1].shape[1]
+            chunks = [torch.nn.functional.pad(chunk, (0, 0, 0, chunks[0].shape[1]-chunk.shape[1]), value=0) for chunk in chunks]
+            x = chunks[get_sequence_parallel_rank()]
+    if tea_cache_update:
+        x = tea_cache.update(x)
+    else:
+        def create_custom_forward(module):
+            def custom_forward(*inputs):
+                return module(*inputs)
+            return custom_forward
+        
+        def create_custom_forward_vap(block, vap):
+            def custom_forward(*inputs):
+                return vap(block, *inputs)
+            return custom_forward
+        
+        for block_id, block in enumerate(dit.blocks):
+            # Block
+            if vap is not None and block_id in vap.mot_layers_mapping:
+                if use_gradient_checkpointing_offload:
+                    with torch.autograd.graph.save_on_cpu():
+                        x, x_vap = torch.utils.checkpoint.checkpoint(
+                            create_custom_forward_vap(block, vap),
+                            x, context, t_mod, freqs, x_vap, context_vap, t_mod_vap, freqs_vap, block_id,
+                            use_reentrant=False,
+                        )
+                elif use_gradient_checkpointing:
+                    x, x_vap = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward_vap(block, vap),
+                        x, context, t_mod, freqs, x_vap, context_vap, t_mod_vap, freqs_vap, block_id,
+                        use_reentrant=False,
+                    )
+                else:
+                    x, x_vap = vap(block, x, context, t_mod, freqs, x_vap, context_vap, t_mod_vap, freqs_vap, block_id)
+            else:
+                if use_gradient_checkpointing_offload:
+                    with torch.autograd.graph.save_on_cpu():
+                        x = torch.utils.checkpoint.checkpoint(
+                            create_custom_forward(block),
+                            x, context, t_mod, freqs,
+                            use_reentrant=False,
+                        )
+                elif use_gradient_checkpointing:
+                    x = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(block),
+                        x, context, t_mod, freqs,
+                        use_reentrant=False,
+                    )
+                else:
+                    x = block(x, context, t_mod, freqs)
+            
+            if block_id in preferred_dit_block_id:
+                print("Return dit feature at block:", block_id)
+                dit_features.append(x)
+            
+            # VACE
+            if vace_context is not None and block_id in vace.vace_layers_mapping:
+                current_vace_hint = vace_hints[vace.vace_layers_mapping[block_id]]
+                if use_unified_sequence_parallel and dist.is_initialized() and dist.get_world_size() > 1:
+                    current_vace_hint = torch.chunk(current_vace_hint, get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
+                    current_vace_hint = torch.nn.functional.pad(current_vace_hint, (0, 0, 0, chunks[0].shape[1] - current_vace_hint.shape[1]), value=0)
+                x = x + current_vace_hint * vace_scale
+            
+            # Animate
+            if pose_latents is not None and face_pixel_values is not None:
+                x = animate_adapter.after_transformer_block(block_id, x, motion_vec)
+        if tea_cache is not None:
+            tea_cache.store(x)
+            
+    x = dit.head(x, t)  #Note: Project from D=1536 to out_features (vae.latent_dim)
+    if use_unified_sequence_parallel:
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            x = get_sp_group().all_gather(x, dim=1)
+            x = x[:, :-pad_shape] if pad_shape > 0 else x
+    # Remove reference latents
+    if reference_latents is not None:
+        x = x[:, reference_latents.shape[1]:]
+        f -= 1
+    x = dit.unpatchify(x, (f, h, w))
+    return x, {'dit_features':dit_features, 'grid_size':(f,h,w)}
 
 
 def model_fn_wan_video(

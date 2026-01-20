@@ -36,7 +36,7 @@ class WanTrainingModule(DiffusionTrainingModule):
     def __init__(
         self,
         pipe: WanVideoPipeline,
-        preferred_timestep=[0.0],   # Use last timestep by default to train on dit features
+        preferred_timestep=[0],   # Use last timestep by default to train on dit features
         preferred_dit_block_id=[-1],    # Use last block by default to train on dit features
         use_gradient_checkpointing=True,
         use_gradient_checkpointing_offload=False,
@@ -90,7 +90,7 @@ class WanTrainingModule(DiffusionTrainingModule):
 
         self.task = task
         self.task_to_loss = {
-            "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, preferred_timestep=self.preferred_timestep, preferred_dit_block_id=self.preferred_dit_block_id, **inputs_shared, **inputs_posi),
+            "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
         }
 
 
@@ -128,6 +128,8 @@ class WanTrainingModule(DiffusionTrainingModule):
             "vace_scale": 1,
             "max_timestep_boundary": self.max_timestep_boundary,
             "min_timestep_boundary": self.min_timestep_boundary,
+            "preferred_timestep_id": self.preferred_timestep,
+            "preferred_dit_block_id": self.preferred_dit_block_id,
         }
         inputs_shared = self.parse_extra_inputs(data, self.extra_inputs, inputs_shared)
         return inputs_shared, inputs_posi, inputs_nega
@@ -189,6 +191,7 @@ if __name__ == "__main__":
         tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
         redirect_common_files=False,
         vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 0.5,
+        return_features=True
     )
     
     model = WanTrainingModule(
