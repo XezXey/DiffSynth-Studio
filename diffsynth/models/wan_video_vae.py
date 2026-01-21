@@ -148,17 +148,17 @@ class Resample(nn.Module):
                         x = self.time_conv(x)
                     else:
                         x = self.time_conv(x, feat_cache[idx])
-                    print("after timeconv: ", x.shape)
+                    # print("after timeconv: ", x.shape)
                     feat_cache[idx] = cache_x
                     feat_idx[0] += 1
 
                     x = x.reshape(b, 2, c, t, h, w)
-                    print("after reshape: ", x.shape)
+                    # print("after reshape: ", x.shape)
                     x = torch.stack((x[:, 0, :, :, :, :], x[:, 1, :, :, :, :]),
                                     3)
-                    print("after stack: ", x.shape)
+                    # print("after stack: ", x.shape)
                     x = x.reshape(b, c, t * 2, h, w)
-                    print("after reshape2: ", x.shape)
+                    # print("after reshape2: ", x.shape)
         t = x.shape[2]
         # print(t)
         x = rearrange(x, 'b c t h w -> (b t) c h w')

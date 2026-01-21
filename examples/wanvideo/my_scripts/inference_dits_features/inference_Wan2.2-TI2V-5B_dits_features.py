@@ -59,10 +59,13 @@ class DummyExtraModules(torch.nn.Module):
             patch_size=pipe.dit.patch_size,
             device=pipe.device
         )
-    def forward(self, inp):
-        return self.extra_modules(inp)
+    def forward(self, dit_features, grid_size):
+        return self.extra_modules(None, dit_features, grid_size)
 
 extra_modules = DummyExtraModules()
+extra_modules.eval()
+for param in extra_modules.parameters():
+    param.requires_grad = False
 tmp_params = torch.mean(torch.stack([p.float().mean() for p in extra_modules.parameters()]))
 #NOTE: Just checking we've save and load the extra modules correctly.
 ckpt = load_file(args.extra_modules_ckpt)
@@ -91,10 +94,23 @@ assert tmp_params != new_tmp_params, "The extra modules parameters do not seem t
 video, return_dict = pipe(
     prompt="纪实摄影风格画面，一只活泼的小狗在绿茵茵的草地上迅速奔跑。小狗毛色棕黄，两只耳朵立起，神情专注而欢快。阳光洒在它身上，使得毛发看上去格外柔软而闪亮。背景是一片开阔的草地，偶尔点缀着几朵野花，远处隐约可见蓝天和几片白云。透视感鲜明，捕捉小狗奔跑时的动感和四周草地的生机。中景侧面移动视角。",
     negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
-    seed=0, tiled=True, num_inference_steps=3,
-
+    seed=0, tiled=True, num_inference_steps=100,
+    return_features=True,
+    height=352, width=624,
+    num_frames=61,
 )
 save_video(video, "video_1_Wan2.1-T2V-1.3B.mp4", fps=15, quality=5)
+
+# Remove pipe models from GPU to save memory
+pipe.load_models_to_device([])
+# Forward pass through extra modules to get motion predictions
+dit_features = return_dict.get("dit_features", None)
+grid_size = return_dict.get("grid_size", None)
+assert dit_features is not None, "Dit features not returned from model_fn."
+assert grid_size is not None, "Grid size not returned from model_fn."
+pixel_coords, depth = extra_modules(dit_features, grid_size)
+motion_pred = torch.cat([pixel_coords, depth], dim=-1)
+print("motion_pred shape: ", motion_pred.shape)
 
 # Image-to-video
 dataset_snapshot_download(
