@@ -63,6 +63,7 @@ class DummyExtraModules(torch.nn.Module):
         return self.extra_modules(inp)
 
 extra_modules = DummyExtraModules()
+tmp_params = torch.mean(torch.stack([p.float().mean() for p in extra_modules.parameters()]))
 #NOTE: Just checking we've save and load the extra modules correctly.
 ckpt = load_file(args.extra_modules_ckpt)
 assert len(extra_modules.state_dict()) == len(ckpt.keys())
@@ -73,8 +74,8 @@ for m in all_m:
         all_m_check.remove(m)
 assert len(all_m_check) == 0, "The extra modules checkpoint keys do not match the model architecture."
 extra_modules.load_state_dict(ckpt)
-
-
+new_tmp_params = torch.mean(torch.stack([p.float().mean() for p in extra_modules.parameters()]))
+assert tmp_params != new_tmp_params, "The extra modules parameters do not seem to have changed"
 
 # Text-to-video
 # video = pipe(
@@ -86,6 +87,15 @@ extra_modules.load_state_dict(ckpt)
 # )
 # save_video(video, "video_1_Wan2.2-TI2V-5B.mp4", fps=15, quality=5)
 
+# Text-to-video
+video, return_dict = pipe(
+    prompt="纪实摄影风格画面，一只活泼的小狗在绿茵茵的草地上迅速奔跑。小狗毛色棕黄，两只耳朵立起，神情专注而欢快。阳光洒在它身上，使得毛发看上去格外柔软而闪亮。背景是一片开阔的草地，偶尔点缀着几朵野花，远处隐约可见蓝天和几片白云。透视感鲜明，捕捉小狗奔跑时的动感和四周草地的生机。中景侧面移动视角。",
+    negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+    seed=0, tiled=True, num_inference_steps=3,
+
+)
+save_video(video, "video_1_Wan2.1-T2V-1.3B.mp4", fps=15, quality=5)
+
 # Image-to-video
 dataset_snapshot_download(
     dataset_id="DiffSynth-Studio/examples_in_diffsynth",
@@ -93,13 +103,16 @@ dataset_snapshot_download(
     allow_file_pattern=["data/examples/wan/cat_fightning.jpg"]
 )
 input_image = Image.open("data/examples/wan/cat_fightning.jpg").resize((1248, 704))
-video = pipe(
+video, return_dict = pipe(
     prompt="两只可爱的橘猫戴上拳击手套，站在一个拳击台上搏斗。",
     negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
     seed=0, tiled=True,
     height=704, width=1248,
     input_image=input_image,
     num_frames=121,
-    num_inference_steps=3
+    num_inference_steps=3,
+    preferred_timestep_id=[-1],
+    preferred_dit_block_id=[-1],
+    return_features=True,
 )
 save_video(video, "video_2_Wan2.2-TI2V-5B.mp4", fps=15, quality=5)

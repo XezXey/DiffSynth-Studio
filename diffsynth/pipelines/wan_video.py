@@ -251,6 +251,10 @@ class WanVideoPipeline(BasePipeline):
         tea_cache_model_id: Optional[str] = "",
         # progress_bar
         progress_bar_cmd=tqdm,
+        #NOTE: Dit features selection
+        preferred_timestep_id: Optional[list[int]] = [-1],
+        preferred_dit_block_id: Optional[list[int]] = [-1],
+        return_features: Optional[bool] = False,
     ):
         # Scheduler
         self.scheduler.set_timesteps(num_inference_steps, denoising_strength=denoising_strength, shift=sigma_shift)
@@ -284,14 +288,20 @@ class WanVideoPipeline(BasePipeline):
             "input_audio": input_audio, "audio_sample_rate": audio_sample_rate, "s2v_pose_video": s2v_pose_video, "audio_embeds": audio_embeds, "s2v_pose_latents": s2v_pose_latents, "motion_video": motion_video,
             "animate_pose_video": animate_pose_video, "animate_face_video": animate_face_video, "animate_inpaint_video": animate_inpaint_video, "animate_mask_video": animate_mask_video,
             "vap_video": vap_video, 
+            "preferred_timestep_id": preferred_timestep_id,
+            "preferred_dit_block_id": preferred_dit_block_id,
         }
         for unit in self.units:
-            print(unit)
             inputs_shared, inputs_posi, inputs_nega = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
 
         # Denoise
         self.load_models_to_device(self.in_iteration_models)
         models = {name: getattr(self, name) for name in self.in_iteration_models}
+        if -1 in preferred_timestep_id:
+            preferred_timestep_id[preferred_timestep_id.index(-1)] = len(self.scheduler.timesteps) - 1
+
+        
+        to_return_dict = None
         for progress_id, timestep in enumerate(progress_bar_cmd(self.scheduler.timesteps)):
             # Switch DiT if necessary
             if timestep.item() < switch_DiT_boundary * 1000 and self.dit2 is not None and not models["dit"] is self.dit2:
@@ -303,12 +313,12 @@ class WanVideoPipeline(BasePipeline):
             timestep = timestep.unsqueeze(0).to(dtype=self.torch_dtype, device=self.device)
             
             # Inference
-            noise_pred_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
+            noise_pred_posi, return_dict_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
             if cfg_scale != 1.0:
                 if cfg_merge:
                     noise_pred_posi, noise_pred_nega = noise_pred_posi.chunk(2, dim=0)
                 else:
-                    noise_pred_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
+                    noise_pred_nega, return_dict_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
                 noise_pred = noise_pred_nega + cfg_scale * (noise_pred_posi - noise_pred_nega)
             else:
                 noise_pred = noise_pred_posi
@@ -317,6 +327,15 @@ class WanVideoPipeline(BasePipeline):
             inputs_shared["latents"] = self.scheduler.step(noise_pred, self.scheduler.timesteps[progress_id], inputs_shared["latents"])
             if "first_frame_latents" in inputs_shared:
                 inputs_shared["latents"][:, :, 0:1] = inputs_shared["first_frame_latents"]
+            
+            if progress_id in preferred_timestep_id and return_features:
+                dit_features = return_dict_posi.get("dit_features", None)
+                grid_size = return_dict_posi.get("grid_size", None)
+                assert dit_features is not None, "Dit features not returned from model_fn."
+                assert grid_size is not None, "Grid size not returned from model_fn."
+                to_return_dict = return_dict_posi
+            else:
+                to_return_dict = None
         
         for unit in self.post_units:
             inputs_shared, _, _ = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
@@ -326,7 +345,10 @@ class WanVideoPipeline(BasePipeline):
         video = self.vae_output_to_video(video)
         self.load_models_to_device([])
 
-        return video
+        if to_return_dict is not None:
+            return video, to_return_dict
+        else:
+            return video
 
 
 

@@ -39,7 +39,7 @@ class WanTrainingModule(DiffusionTrainingModule):
     def __init__(
         self,
         pipe: WanVideoPipeline,
-        preferred_timestep=[0],   # Use last timestep by default to train on dit features
+        preferred_timestep_id=[-1],   # Use last timestep by default to train on dit features
         preferred_dit_block_id=[-1],    # Use last block by default to train on dit features
         use_gradient_checkpointing=True,
         use_gradient_checkpointing_offload=False,
@@ -70,7 +70,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.max_timestep_boundary = max_timestep_boundary
         self.min_timestep_boundary = min_timestep_boundary
 
-        self.preferred_timestep = preferred_timestep
+        self.preferred_timestep_id = preferred_timestep_id
         self.preferred_dit_block_id = preferred_dit_block_id
 
         # Use Wan models as frozen models
@@ -136,7 +136,7 @@ class WanTrainingModule(DiffusionTrainingModule):
             "vace_scale": 1,
             "max_timestep_boundary": self.max_timestep_boundary,
             "min_timestep_boundary": self.min_timestep_boundary,
-            "preferred_timestep_id": self.preferred_timestep,
+            "preferred_timestep_id": self.preferred_timestep_id,
             "preferred_dit_block_id": self.preferred_dit_block_id,
         }
         inputs_shared = self.parse_extra_inputs(data, self.extra_inputs, inputs_shared)
