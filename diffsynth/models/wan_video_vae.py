@@ -120,6 +120,7 @@ class Resample(nn.Module):
     def forward(self, x, feat_cache=None, feat_idx=[0]):
         b, c, t, h, w = x.size()
         if self.mode == 'upsample3d':
+            #TODO: feat_cache is needed for upsample3d (timeconv), so what's cache logic here?
             if feat_cache is not None:
                 idx = feat_idx[0]
                 if feat_cache[idx] is None:
@@ -147,14 +148,19 @@ class Resample(nn.Module):
                         x = self.time_conv(x)
                     else:
                         x = self.time_conv(x, feat_cache[idx])
+                    print("after timeconv: ", x.shape)
                     feat_cache[idx] = cache_x
                     feat_idx[0] += 1
 
                     x = x.reshape(b, 2, c, t, h, w)
+                    print("after reshape: ", x.shape)
                     x = torch.stack((x[:, 0, :, :, :, :], x[:, 1, :, :, :, :]),
                                     3)
+                    print("after stack: ", x.shape)
                     x = x.reshape(b, c, t * 2, h, w)
+                    print("after reshape2: ", x.shape)
         t = x.shape[2]
+        print(t)
         x = rearrange(x, 'b c t h w -> (b t) c h w')
         x = self.resample(x)
         x = rearrange(x, '(b t) c h w -> b c t h w', t=t)
@@ -1233,10 +1239,10 @@ class WanVideoVAE(nn.Module):
 
 
     def decode(self, hidden_states, device, tiled=False, tile_size=(34, 34), tile_stride=(18, 16)):
-        hidden_states = [hidden_state.to("cpu") for hidden_state in hidden_states]
+        hidden_states = [hidden_state.to("cpu") for hidden_state in hidden_states]  # batched tensor -> list of tensor
         videos = []
         for hidden_state in hidden_states:
-            hidden_state = hidden_state.unsqueeze(0)
+            hidden_state = hidden_state.unsqueeze(0)    # add batch dim
             if tiled:
                 video = self.tiled_decode(hidden_state, device, tile_size, tile_stride)
             else:

@@ -54,5 +54,6 @@ video = pipe(
     height=704, width=1248,
     input_image=input_image,
     num_frames=121,
+    num_inference_steps=3
 )
 save_video(video, "video_2_Wan2.2-TI2V-5B.mp4", fps=15, quality=5)

@@ -6,10 +6,6 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))
 
     preferred_timestep_id = inputs.get("preferred_timestep_id", [-1])
-    # preferred_dit_block_id = inputs.get("preferred_dit_block_id", [-1])
-
-    #TODO: Takes preferred timestep and block_id as inputs for training on dit features
-    # timestep_id = torch.randint(min_timestep_boundary, max_timestep_boundary, (1,))
     timestep_id = torch.tensor(preferred_timestep_id, dtype=torch.int)
 
     timestep = pipe.scheduler.timesteps[timestep_id].to(dtype=pipe.torch_dtype, device=pipe.device)
@@ -26,7 +22,7 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     assert dit_features is not None, "Dit features not returned from model_fn."
     assert grid_size is not None, "Grid size not returned from model_fn."
 
-    joint_map_pred = extra_modules(pipe, dit_features, grid_size)
+    pixel_coords, depth = extra_modules(pipe, dit_features, grid_size)
     
     loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
     loss = loss * pipe.scheduler.training_weight(timestep)

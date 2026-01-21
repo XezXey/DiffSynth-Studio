@@ -3,7 +3,7 @@ from PIL import Image
 from diffsynth.utils.data import save_video
 from diffsynth.core import UnifiedDataset
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
-from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionVAEDecoder
+from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionVAEDecoder, JointHeatMapMotionUpsample
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
@@ -73,7 +73,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        self.extra_modules = JointHeatMapMotionVAEDecoder(
+        self.extra_modules = JointHeatMapMotionUpsample(
             n_joints=23,
             dit_dim=pipe.dit.dim,
             head_out_dim=pipe.dit.out_dim,

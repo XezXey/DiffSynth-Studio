@@ -89,15 +89,15 @@ def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
 
 
 def rope_apply(x, freqs, num_heads):
-    print("x shape before rope:", x.shape)
+    # print("x shape before rope:", x.shape)
     x = rearrange(x, "b s (n d) -> b s n d", n=num_heads)
-    print("x shape after rearrange:", x.shape)
+    # print("x shape after rearrange:", x.shape)
     x_out = torch.view_as_complex(x.to(torch.float64).reshape(
         x.shape[0], x.shape[1], x.shape[2], -1, 2))
-    print("x_out shape as complex:", x_out.shape)
-    print("freqs: ", freqs.shape)
+    # print("x_out shape as complex:", x_out.shape)
+    # print("freqs: ", freqs.shape)
     x_out = torch.view_as_real(x_out * freqs).flatten(2)
-    print("x_out shape after rope:", x_out.shape)
+    # print("x_out shape after rope:", x_out.shape)
     return x_out.to(x.dtype)
 
 
