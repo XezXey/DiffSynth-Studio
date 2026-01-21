@@ -24,6 +24,9 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
 
     pixel_coords, depth = extra_modules(pipe, dit_features, grid_size)
     
-    loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
-    loss = loss * pipe.scheduler.training_weight(timestep)
+    motion_pred = torch.cat([pixel_coords, depth], dim=-1)
+    print("motion_pred shape: ", motion_pred.shape)
+    training_target = torch.ones_like(motion_pred)  # Dummy target for example purposes
+    loss = torch.nn.functional.mse_loss(motion_pred.float(), training_target.float())
+    # loss = loss * pipe.scheduler.training_weight(timestep)
     return loss

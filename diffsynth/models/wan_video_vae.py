@@ -160,7 +160,7 @@ class Resample(nn.Module):
                     x = x.reshape(b, c, t * 2, h, w)
                     print("after reshape2: ", x.shape)
         t = x.shape[2]
-        print(t)
+        # print(t)
         x = rearrange(x, 'b c t h w -> (b t) c h w')
         x = self.resample(x)
         x = rearrange(x, '(b t) c h w -> b c t h w', t=t)

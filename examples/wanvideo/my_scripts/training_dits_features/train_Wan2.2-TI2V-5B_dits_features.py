@@ -9,6 +9,7 @@ from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # # CPU Offload
 vram_config = {
     "offload_dtype": torch.bfloat16,
@@ -30,6 +31,8 @@ def wan_parser():
     parser.add_argument("--max_timestep_boundary", type=float, default=1.0, help="Max timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--min_timestep_boundary", type=float, default=0.0, help="Min timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
+    #NOTE: Extra parameters for training additional modules
+    parser.add_argument("--save_name", type=str, default=None, help="Name to use when saving checkpoints.")
     return parser
 
 class WanTrainingModule(DiffusionTrainingModule):
@@ -187,7 +190,6 @@ if __name__ == "__main__":
         #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
         #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="Wan2.2_VAE.pth", **vram_config),
         # ],
-        # tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
         model_configs=[
             ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
             ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
@@ -213,11 +215,9 @@ if __name__ == "__main__":
     )
 
     launcher_map = {
-        "dit_features": launch_training_task,
+        "dit_features": launch_training_task_add_modules,
     }
     launcher_map[args.task](accelerator, dataset, model, model_logger, args=args)
-
-    # model(dataset)
 
     # video = pipe(
     #     prompt="两只可爱的橘猫戴上拳击手套，站在一个拳击台上搏斗。",
