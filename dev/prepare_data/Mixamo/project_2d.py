@@ -8,6 +8,7 @@ from pathlib import Path
 import argparse
 parser = argparse.ArgumentParser(description="Project 3D joints to 2D using camera parameters from JSON.")
 parser.add_argument('--path', type=str, required=True, help='Path to the directory containing skeleton_{name}.json')
+parser.add_argument('--skip_plot_map', default=False, action='store_true', help='Whether to plot 2D joint projections on images')
 args = parser.parse_args()
 
 def project(fx, fy, cx, cy, E_bl, j3d):
@@ -136,93 +137,97 @@ def process(path):
     j2d = np.stack([u, v, z], axis=-1)  # (u,v,depth) => (F, J, 3)
 
     j3d_unproj = unproject(fx, fy, cx, cy, E_bl, j2d)
+    assert np.allclose(j3d, j3d_unproj, atol=1e-6), "Unprojection error too large!"
+    j2d_proj = project(fx, fy, cx, cy, E_bl, j3d_unproj)
+    assert np.allclose(j2d, np.stack(j2d_proj, axis=-1), atol=1e-6), "Projection after unprojection error too large!"
     # print(j3d, j3d_unproj)
     # print(np.abs(j3d - j3d_unproj).mean())
-    print(j2d.shape, j3d.shape, j3d_unproj.shape)
-    assert np.allclose(j3d, j3d_unproj, atol=1e-6), "Unprojection error too large!"
+    # print(j2d.shape, j3d.shape, j3d_unproj.shape)
 
     T, J, _ = j2d.shape
-    for ti in range(T):
-        # Plot 2D joints on transparent canvas
-        canvas = np.ones((H, W, 4), dtype=np.float32)
-        canvas[..., 3] = 0.0  # make transparent
-        depth_canvas = np.ones((H, W, 4), dtype=np.float32)
-        depth_canvas[..., 3] = 0.0  # make transparent
-        depth_value = j2d[ti, :, 2] - np.min(j2d[ti, :, 2])
-        depth_value = depth_value / (np.max(depth_value) + 1e-8)
-        
-        # Draw bones
-        for start_name, end_name in data["bones"]:
-            start_idx = data["joint_names"].index(start_name)
-            end_idx = data["joint_names"].index(end_name)
-            if 'right' in start_name.lower() or 'right' in end_name.lower():
-                bcolor = (0.0, 0.0, 1.0, 1.0)  # Blue for right side
-            elif 'left' in start_name.lower() or 'left' in end_name.lower():
-                bcolor = (1.0, 0.0, 0.0, 1.0)  # Magenta for left side
-            else:
-                bcolor = (0.0, 1.0, 0.0, 1.0)  # Green for others
-                
-            x0, y0 = j2d[ti, start_idx][:2]
-            x1, y1 = j2d[ti, end_idx][:2]
-            if (0 <= x0 < W and 0 <= y0 < H and 0 <= x1 < W and 0 <= y1 < H):
-                cv2.line(
-                    canvas,
-                    pt1=(int(x0), int(y0)),
-                    pt2=(int(x1), int(y1)),
-                    color=bcolor,
-                    thickness=2,
-                )
-                cv2.line(
-                    depth_canvas,
-                    pt1=(int(x0), int(y0)),
-                    pt2=(int(x1), int(y1)),
-                    color=bcolor,
-                    thickness=2,
-                )
-        
-        for tj in range(J):
-            x, y = j2d[ti, tj][:2]
-            if 0 <= x < W and 0 <= y < H:
-                # Draw joint
-                cv2.circle(
-                    canvas,
-                    center=(int(x), int(y)),
-                    radius=1,
-                    color=(0.0, 1.0, 0.0, 1.0),
-                    thickness=2,
-                )
-                # brightness = 0.3 + 0.7 * depth_value[tj]
-                # depth_color = np.array(bcolor[:3]) * brightness
-                # print(depth_color)
-                # exit()
+    if not args.skip_plot_map:
+        for ti in range(T):
+            # Plot 2D joints on transparent canvas
+            canvas = np.ones((H, W, 4), dtype=np.float32)
+            canvas[..., 3] = 0.0  # make transparent
+            depth_canvas = np.ones((H, W, 4), dtype=np.float32)
+            depth_canvas[..., 3] = 0.0  # make transparent
+            depth_value = j2d[ti, :, 2] - np.min(j2d[ti, :, 2])
+            depth_value = depth_value / (np.max(depth_value) + 1e-8)
+            
+            # Draw bones
+            for start_name, end_name in data["bones"]:
+                start_idx = data["joint_names"].index(start_name)
+                end_idx = data["joint_names"].index(end_name)
+                if 'right' in start_name.lower() or 'right' in end_name.lower():
+                    bcolor = (0.0, 0.0, 1.0, 1.0)  # Blue for right side
+                elif 'left' in start_name.lower() or 'left' in end_name.lower():
+                    bcolor = (1.0, 0.0, 0.0, 1.0)  # Magenta for left side
+                else:
+                    bcolor = (0.0, 1.0, 0.0, 1.0)  # Green for others
+                    
+                x0, y0 = j2d[ti, start_idx][:2]
+                x1, y1 = j2d[ti, end_idx][:2]
+                if (0 <= x0 < W and 0 <= y0 < H and 0 <= x1 < W and 0 <= y1 < H):
+                    cv2.line(
+                        canvas,
+                        pt1=(int(x0), int(y0)),
+                        pt2=(int(x1), int(y1)),
+                        color=bcolor,
+                        thickness=2,
+                    )
+                    cv2.line(
+                        depth_canvas,
+                        pt1=(int(x0), int(y0)),
+                        pt2=(int(x1), int(y1)),
+                        color=bcolor,
+                        thickness=2,
+                    )
+            
+            for tj in range(J):
+                x, y = j2d[ti, tj][:2]
+                if 0 <= x < W and 0 <= y < H:
+                    # Draw joint
+                    cv2.circle(
+                        canvas,
+                        center=(int(x), int(y)),
+                        radius=1,
+                        color=(0.0, 1.0, 0.0, 1.0),
+                        thickness=2,
+                    )
+                    # brightness = 0.3 + 0.7 * depth_value[tj]
+                    # depth_color = np.array(bcolor[:3]) * brightness
+                    # print(depth_color)
+                    # exit()
 
-                value = int(depth_value[tj] * 255)
-                gray = np.array([[value]], dtype=np.uint8)   # shape (1,1)
-                depth_color = cv2.applyColorMap(gray, cv2.COLORMAP_JET)[0, 0] / 255.0  # Normalize to [0,1]
-                
-                cv2.circle(
-                    depth_canvas,
-                    center=(int(x), int(y)),
-                    radius=1,
-                    color=(depth_color[0], depth_color[1], depth_color[2]),
-                    thickness=2,
-                )
-                
-        cv2.imwrite(str(path / f"proj{ti+1:04d}.png"), (canvas[..., :3] * 255).astype(np.uint8))
-        cv2.imwrite(str(path / f"depth{ti+1:04d}.png"), (depth_canvas[..., :3] * 255).astype(np.uint8))
+                    value = int(depth_value[tj] * 255)
+                    gray = np.array([[value]], dtype=np.uint8)   # shape (1,1)
+                    depth_color = cv2.applyColorMap(gray, cv2.COLORMAP_JET)[0, 0] / 255.0  # Normalize to [0,1]
+                    
+                    cv2.circle(
+                        depth_canvas,
+                        center=(int(x), int(y)),
+                        radius=1,
+                        color=(depth_color[0], depth_color[1], depth_color[2]),
+                        thickness=2,
+                    )
+                    
+            cv2.imwrite(str(path / f"proj{ti+1:04d}.png"), (canvas[..., :3] * 255).astype(np.uint8))
+            cv2.imwrite(str(path / f"depth{ti+1:04d}.png"), (depth_canvas[..., :3] * 255).astype(np.uint8))
 
-        save_data = {
-            "joints_2d": j2d.tolist(),
-            "joints_3d": j3d.tolist(),
-            "joints_3d_unproj": j3d_unproj.tolist(),
-            "cams_intr": data["cams_intr"],
-            "cams_extr": data["cams_extr"],
-            "bones": data["bones"],
-            "joint_names": data["joint_names"],
-        }
-        
-        np.savez_compressed(path / f"proj_data.npz", **save_data)
-        exit()
+    save_data = {
+        "joints_2d": j2d.tolist(),
+        "joints_3d": j3d.tolist(),
+        "joints_3d_unproj": j3d_unproj.tolist(),
+        "cams_intr": data["cams_intr"],
+        "cams_extr": data["cams_extr"],
+        "bones": data["bones"],
+        "joint_names": data["joint_names"],
+        "H": H,
+        "W": W,
+    }
+    
+    np.savez_compressed(path / f"motion_data.npz", **save_data)
 
 if __name__ == "__main__":
     t = tqdm.tqdm(glob.glob(f'{args.path}/*/cam*/'), desc="Processing: ")

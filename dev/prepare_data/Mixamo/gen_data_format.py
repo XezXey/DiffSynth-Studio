@@ -74,12 +74,7 @@ if __name__ == "__main__":
                 prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view."
                 vid_file = f"{vid_name}_render.mp4"
                 df_render = pd.concat([df_render, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
-
-            with open(os.path.join(output_path, 'metadata_combined.csv'), 'a') as f:
-                cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
-                prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view."
-                vid_file = f"{vid_name}_combined.mp4"
-                df_combined = pd.concat([df_combined, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
+            
     df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
     df_combined.to_csv(os.path.join(output_path, 'metadata_combined.csv'), index=False)
 
