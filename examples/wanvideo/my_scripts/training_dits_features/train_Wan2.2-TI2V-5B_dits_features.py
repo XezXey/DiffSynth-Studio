@@ -1,9 +1,9 @@
 import torch, os, argparse, accelerate, warnings
 from PIL import Image
 from diffsynth.utils.data import save_video
-from diffsynth.core import UnifiedDataset
+from diffsynth.core import UnifiedMotionDataset
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
-from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionVAEDecoder, JointHeatMapMotionUpsample
+from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionUpsample
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
@@ -78,7 +78,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.force_no_grad()
 
         self.extra_modules = JointHeatMapMotionUpsample(
-            n_joints=23,
+            n_joints=65,
             dit_dim=pipe.dit.dim,
             head_out_dim=pipe.dit.out_dim,
             flatten_dim=256, #TODO: Fix this!!!
@@ -98,7 +98,6 @@ class WanTrainingModule(DiffusionTrainingModule):
         }
 
 
-        
     def parse_extra_inputs(self, data, extra_inputs, inputs_shared):
         for extra_input in extra_inputs:
             if extra_input == "input_image":
@@ -120,6 +119,8 @@ class WanTrainingModule(DiffusionTrainingModule):
             "input_video": data["video"],
             "height": data["video"][0].size[1],
             "width": data["video"][0].size[0],
+
+            # "original_height": ,
             "num_frames": len(data["video"]),
             # Please do not modify the following parameters
             # unless you clearly know what this will cause.
@@ -139,6 +140,13 @@ class WanTrainingModule(DiffusionTrainingModule):
             "min_timestep_boundary": self.min_timestep_boundary,
             "preferred_timestep_id": self.preferred_timestep_id,
             "preferred_dit_block_id": self.preferred_dit_block_id,
+            # Motion data
+            "joints_3d": data['motion']["joints_3d"],
+            "joints_2d": data['motion']["joints_2d"],
+            "cams_intr": data['motion']["cams_intr"],
+            "cams_extr": data['motion']["cams_extr"],
+            "joint_names": data['motion']["joint_names"],
+            "bones": data['motion']["bones"],
         }
         inputs_shared = self.parse_extra_inputs(data, self.extra_inputs, inputs_shared)
         return inputs_shared, inputs_posi, inputs_nega
@@ -161,13 +169,23 @@ if __name__ == "__main__":
     )
 
     # Image-to-video
-    #TODO: Load the depth map and 3d joints
-    dataset = UnifiedDataset(
+    dataset = UnifiedMotionDataset(
         base_path=args.dataset_base_path,
         metadata_path=args.dataset_metadata_path,
         repeat=args.dataset_repeat,
         data_file_keys=args.data_file_keys.split(","),
-        main_data_operator=UnifiedDataset.default_video_operator(
+        main_data_operator=UnifiedMotionDataset.default_video_operator(
+            base_path=args.dataset_base_path,
+            max_pixels=args.max_pixels,
+            height=args.height,
+            width=args.width,
+            height_division_factor=16,
+            width_division_factor=16,
+            num_frames=args.num_frames, # 81
+            time_division_factor=4,
+            time_division_remainder=1,
+        ),
+        motion_data_operator=UnifiedMotionDataset.default_motion_operator(
             base_path=args.dataset_base_path,
             max_pixels=args.max_pixels,
             height=args.height,

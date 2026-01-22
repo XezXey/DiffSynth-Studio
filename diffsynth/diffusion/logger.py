@@ -77,6 +77,7 @@ class TrainingLogger:
         self.training_logger.log({"loss": loss})
     
     def log_predictions(self, pred_dict: dict):
+        pass
 
 
         

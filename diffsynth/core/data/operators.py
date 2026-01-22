@@ -1,7 +1,7 @@
 import torch, torchvision, imageio, os
 import imageio.v3 as iio
 from PIL import Image
-
+import numpy as np
 
 class DataProcessingPipeline:
     def __init__(self, operators=None):
@@ -72,6 +72,7 @@ class ImageCropAndResize(DataProcessingOperator):
 
     def crop_and_resize(self, image, target_height, target_width):
         width, height = image.size
+        # One equal to target size, and another larger than target size (then use center crop)
         scale = max(target_width / width, target_height / height)
         image = torchvision.transforms.functional.resize(
             image,
@@ -112,6 +113,8 @@ class LoadVideo(DataProcessingOperator):
         self.frame_processor = frame_processor
         
     def get_num_frames(self, reader):
+        # If the video has fewer frames than num_frames, adjust accordingly.
+        # If the video has more frames, just use num_frames=81.
         num_frames = self.num_frames
         if int(reader.count_frames()) < num_frames:
             num_frames = int(reader.count_frames())
@@ -131,6 +134,48 @@ class LoadVideo(DataProcessingOperator):
             frames.append(frame)
         reader.close()
         return frames
+    
+class LoadMotion(DataProcessingOperator):
+    def __init__(self, num_frames=81, time_division_factor=4, time_division_remainder=1):
+        self.num_frames = num_frames
+        self.time_division_factor = time_division_factor
+        self.time_division_remainder = time_division_remainder
+
+    def get_num_frames(self, motion_data):
+        #NOTE: Same logic of LoadVideo to ensure we get the same motion frames as LoadVideo.
+        # If the video has fewer frames than num_frames, adjust accordingly.
+        # If the video has more frames, just use num_frames=81.
+        num_frames = self.num_frames
+        T = motion_data.shape[0]
+        if int(T) < num_frames:
+            num_frames = int(T)
+            while num_frames > 1 and num_frames % self.time_division_factor != self.time_division_remainder:
+                num_frames -= 1
+        return num_frames
+
+    def __call__(self, data: str):
+        print(data)
+        motion_data = np.load(data)
+        j3d = motion_data["joints_3d"]  # (T, J, 3)
+        j2d = motion_data["joints_2d"]  # (T, J, 2)
+        assert j3d.shape[0] == j2d.shape[0]
+        num_frames = self.get_num_frames(j3d)
+        j3d = j3d[:num_frames]
+        j2d = j2d[:num_frames]
+        cams_extr = motion_data["cams_extr"][:num_frames] # (T, 4, 4)
+        cams_intr = motion_data["cams_intr"] # (4) = fx, fy, cx, cy
+        return {"joints_3d": j3d, 
+                "joints_2d": j2d, 
+                'cams_intr': cams_intr,
+                'cams_extr': cams_extr,
+                "joint_names": motion_data["joint_names"].tolist(),
+                "bones": motion_data["bones"].tolist(),
+        }
+
+
+
+
+
 
 
 class SequencialProcess(DataProcessingOperator):

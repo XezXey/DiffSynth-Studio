@@ -300,6 +300,8 @@ class JointHeatMapMotionUpsample(th.nn.Module):
         """
         b, c, t, h, w = joint_map.shape
         joint_map_list = th.chunk(joint_map, self.J, dim=1)  # List of (b, 2, t, h, w), length J
+        all_pixel_coords = []
+        all_depths = []
         for map in joint_map_list:
             heatmap = map[:, 0, :, :, :]  # (b, t, h, w)
             depth_map = map[:, 1, :, :, :]  # (b, t, h, w)
@@ -309,7 +311,9 @@ class JointHeatMapMotionUpsample(th.nn.Module):
             prob_map = th.softmax(heatmap_flat, dim=-1).view(b, t, h, w)  # (b, t, h, w)
 
             # Create coordinate grids
-            y_coords, x_coords = th.meshgrid(th.arange(h, device=joint_map_list[0].device), th.arange(w, device=joint_map_list[0].device), indexing='ij')
+            # y_coords, x_coords = th.meshgrid(th.arange(h, device=joint_map_list[0].device), th.arange(w, device=joint_map_list[0].device), indexing='ij')
+            y_coords, x_coords = th.meshgrid(th.linspace(0, 1, h, device=joint_map_list[0].device), th.linspace(0, 1, w, device=joint_map_list[0].device), indexing='ij')
+
             y_coords = y_coords.view(1, 1, h, w).expand(b, t, h, w)
             x_coords = x_coords.view(1, 1, h, w).expand(b, t, h, w)
 
@@ -321,5 +325,11 @@ class JointHeatMapMotionUpsample(th.nn.Module):
             # Compute expected depth
             depth = th.sum(prob_map * depth_map, dim=(2, 3))  # (b, t)
             depth = depth.unsqueeze(-1)  # (b, t, 1)
+
+            all_pixel_coords.append(pixel_coords[:, None, :, :])  # (b, 1, t, 2)
+            all_depths.append(depth[:, None, :, :])  # (b, 1, t, 1)
+        
+        pixel_coords = th.cat(all_pixel_coords, dim=1)  # (b, J, t, 2)
+        depth = th.cat(all_depths, dim=1)  # (b, J, t, 1)
 
         return pixel_coords, depth

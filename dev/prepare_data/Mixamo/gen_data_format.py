@@ -19,8 +19,9 @@ parser.add_argument('--output_path', type=str, required=True, help='Output direc
 args = parser.parse_args()
 
 def vid_from_frames(input_path, output_video_path):
-    cmd = f'ffmpeg -y -framerate 30 -i {input_path} -c:v libx264 -pix_fmt yuv420p {output_video_path}'
-    print(input_path, output_video_path)
+    # cmd = f'ffmpeg -y -framerate 30 -i {input_path} -c:v libx264 -pix_fmt yuv420p {output_video_path}'
+    cmd = f'ffmpeg -y -framerate 30 -i {input_path} -c:v libopenh264 -pix_fmt yuv420p {output_video_path}'
+    # print(input_path, output_video_path)
     os.system(cmd + " > /dev/null 2>&1")
 
 if __name__ == "__main__":
@@ -62,8 +63,8 @@ if __name__ == "__main__":
                 df_render = pd.concat([df_render, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
             
             # Copy motion_data.npz
-            src_npz = os.path.join(cam, 'motion_data.npz')
-            dst_npz = os.path.join(output_path, f'{vid_name}_motion_data.npz')
+            src_npz = os.path.join(cam, 'motion_data.npz').replace(' ', '\ ')
+            dst_npz = os.path.join(output_path, f'{vid_name}_motion_data.npz').replace(' ', '\ ')
             os.system(f'cp {src_npz} {dst_npz}')
             
     df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
