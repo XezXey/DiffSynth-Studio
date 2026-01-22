@@ -2,7 +2,7 @@ import os, torch
 from tqdm import tqdm
 from accelerate import Accelerator
 from .training_module import DiffusionTrainingModule
-from .logger import ModelLogger
+from .logger import ModelLogger, TrainingLogger
 
 
 def launch_training_task(
@@ -76,6 +76,7 @@ def launch_training_task_add_modules(
     dataset: torch.utils.data.Dataset,
     model: DiffusionTrainingModule,
     model_logger: ModelLogger,
+    training_logger: TrainingLogger,
     learning_rate: float = 1e-5,
     weight_decay: float = 1e-2,
     num_workers: int = 1,
@@ -104,11 +105,13 @@ def launch_training_task_add_modules(
                 if dataset.load_from_cache:
                     loss = model({}, inputs=data)
                 else:
-                    loss = model(data)
+                    loss, pred_dict = model(data)
                 accelerator.backward(loss)
                 optimizer.step()
                 model_logger.on_step_end(accelerator, model, save_steps, name=name)
+                training_logger.on_step_end(accelerator, loss, pred_dict, save_steps)
                 scheduler.step()
         if save_steps is None:
             model_logger.on_epoch_end(accelerator, model, epoch_id, name=name)
+            training_logger.on_epoch_end(loss, pred_dict, save_steps)
         model_logger.on_training_end(accelerator, model, save_steps, name=name)

@@ -37,6 +37,7 @@ def add_training_config(parser: argparse.ArgumentParser):
     parser.add_argument("--find_unused_parameters", default=False, action="store_true", help="Whether to find unused parameters in DDP.")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay.")
     parser.add_argument("--task", type=str, default="sft", required=False, help="Task type.")
+    parser.add_argument("--log_steps", type=int, default=5, help="Logging training progress.")
     return parser
 
 def add_output_config(parser: argparse.ArgumentParser):

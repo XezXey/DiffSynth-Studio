@@ -220,7 +220,7 @@ class JointHeatMapMotionUpsample(th.nn.Module):
         # Initial conv
         dim_mult = [1, 2, 4, 4]
         upsample_dims = [upsample_dim * u for u in [dim_mult[-1]] + dim_mult[::-1]]
-        self.conv1 = CausalConv3d(vae_latent_dim, upsample_dims[0], 3, padding=1).cuda()
+        self.conv1 = CausalConv3d(vae_latent_dim, upsample_dims[0], 3, padding=1).to(device)
         # Upsample layers
         upsamples = []
         for i, (in_dim, out_dim) in enumerate(zip(upsample_dims[:-1], upsample_dims[1:])):

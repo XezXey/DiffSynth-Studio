@@ -7,6 +7,7 @@ from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionVAEDecoder, 
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
+import wandb
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -208,23 +209,48 @@ if __name__ == "__main__":
         max_timestep_boundary=args.max_timestep_boundary,
         min_timestep_boundary=args.min_timestep_boundary,
     )
+    os.makedirs(args.output_path + "/wandb", exist_ok=True)
+    wandb_logger = wandb.init(
+        # Set the wandb entity where your project will be logged (generally your team name).
+        entity="xezxey",
+        # Set the wandb project where this run will be logged.
+        project="SkelAg",
+        # Name of this run
+        name=args.save_name,
+        # Track hyperparameters and run metadata.
+        config={
+            # Model info
+            "model_id": "Wan-AI/Wan2.1-T2V-1.3B",
+            "model_id_with_origin_paths": args.model_id_with_origin_paths,
+            # Training info
+            "learning_rate": args.learning_rate,
+            "epochs": args.num_epochs,
+            "task": "dit_features",
+            "dataset_repeat": args.dataset_repeat,
+            "height": args.height,
+            "width": args.width,
+            "num_frames": args.num_frames,
+            # Saving info
+            "output_path": args.output_path,
+            "save_name": args.save_name,
+            # Dataset info
+            "dataset_base_path": args.dataset_base_path,
+            "dataset_metadata_path": args.dataset_metadata_path,
+        },
+        dir=args.output_path + "/wandb",
+
+    )
 
     model_logger = ModelLogger(
         args.output_path,
         remove_prefix_in_ckpt=args.remove_prefix_in_ckpt,
     )
 
+    training_logger = TrainingLogger(
+        wandb_logger,
+    )
+
     launcher_map = {
         "dit_features": launch_training_task_add_modules,
     }
-    launcher_map[args.task](accelerator, dataset, model, model_logger, args=args)
-
-    # video = pipe(
-    #     prompt="两只可爱的橘猫戴上拳击手套，站在一个拳击台上搏斗。",
-    #     negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
-    #     seed=0, tiled=True,
-    #     height=704, width=1248,
-    #     input_image=input_image,
-    #     num_frames=121,
-    # )
-    # save_video(video, "video_2_Wan2.2-TI2V-5B.mp4", fps=15, quality=5)
+    launcher_map[args.task](accelerator, dataset, model, model_logger, training_logger, args=args)

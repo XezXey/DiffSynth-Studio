@@ -26,7 +26,6 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     
     motion_pred = torch.cat([pixel_coords, depth], dim=-1)
     print("motion_pred shape: ", motion_pred.shape)
-    training_target = torch.ones_like(motion_pred)  # Dummy target for example purposes
+    training_target = torch.ones_like(motion_pred)  #TODO: Change into real data Dummy target for example purposes
     loss = torch.nn.functional.mse_loss(motion_pred.float(), training_target.float())
-    # loss = loss * pipe.scheduler.training_weight(timestep)
-    return loss
+    return loss, inputs.update({"motion_pred": motion_pred, "training_target": training_target})

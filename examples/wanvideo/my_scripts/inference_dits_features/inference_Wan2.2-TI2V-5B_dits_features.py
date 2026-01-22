@@ -25,6 +25,7 @@ def wan_parser():
     #NOTE: Extra parameters for training additional modules
     parser = argparse.ArgumentParser(description="WanVideo Inference with DITS Features")
     parser.add_argument("--extra_modules_ckpt", type=str, required=True, help="Name to use when saving checkpoints.")
+    parser.add_argument("--split_gpu", default=False, action="store_true", help="Use another gpu for inference the extra modules.")
     return parser
 
 parser = wan_parser()
@@ -48,8 +49,19 @@ pipe = WanVideoPipeline.from_pretrained(
     vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 0.5,
     return_features=True
 )
+# Text-to-video
+video, return_dict = pipe(
+    prompt="纪实摄影风格画面，一只活泼的小狗在绿茵茵的草地上迅速奔跑。小狗毛色棕黄，两只耳朵立起，神情专注而欢快。阳光洒在它身上，使得毛发看上去格外柔软而闪亮。背景是一片开阔的草地，偶尔点缀着几朵野花，远处隐约可见蓝天和几片白云。透视感鲜明，捕捉小狗奔跑时的动感和四周草地的生机。中景侧面移动视角。",
+    negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+    seed=0, tiled=True, num_inference_steps=3,
+    return_features=True,
+    height=704//2, width=1248//2,
+    num_frames=81,
+)
+save_video(video, "video_1_Wan2.1-T2V-1.3B.mp4", fps=15, quality=5)
+
 class DummyExtraModules(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, device):
         super().__init__()
         self.extra_modules = JointHeatMapMotionUpsample(
             n_joints=23,
@@ -58,12 +70,12 @@ class DummyExtraModules(torch.nn.Module):
             flatten_dim=256, #TODO: Fix this!!!
             vae_latent_dim=pipe.vae.z_dim,
             patch_size=pipe.dit.patch_size,
-            device=pipe.device
+            device=device
         )
     def forward(self, dit_features, grid_size):
         return self.extra_modules(None, dit_features, grid_size)
 
-extra_modules = DummyExtraModules()
+extra_modules = DummyExtraModules(device=pipe.device if not args.split_gpu else "cuda:1")
 extra_modules.eval()
 for param in extra_modules.parameters():
     param.requires_grad = False
@@ -81,55 +93,13 @@ extra_modules.load_state_dict(ckpt)
 new_tmp_params = torch.mean(torch.stack([p.float().mean() for p in extra_modules.parameters()]))
 assert tmp_params != new_tmp_params, "The extra modules parameters do not seem to have changed"
 
-# Text-to-video
-# video = pipe(
-#     prompt="两只可爱的橘猫戴上拳击手套，站在一个拳击台上搏斗。",
-#     negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
-#     seed=0, tiled=True,
-#     height=704, width=1248,
-#     num_frames=121,
-# )
-# save_video(video, "video_1_Wan2.2-TI2V-5B.mp4", fps=15, quality=5)
-
-# Text-to-video
-video, return_dict = pipe(
-    prompt="纪实摄影风格画面，一只活泼的小狗在绿茵茵的草地上迅速奔跑。小狗毛色棕黄，两只耳朵立起，神情专注而欢快。阳光洒在它身上，使得毛发看上去格外柔软而闪亮。背景是一片开阔的草地，偶尔点缀着几朵野花，远处隐约可见蓝天和几片白云。透视感鲜明，捕捉小狗奔跑时的动感和四周草地的生机。中景侧面移动视角。",
-    negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
-    seed=0, tiled=True, num_inference_steps=100,
-    return_features=True,
-    # height=256, width=512,
-    num_frames=81,
-)
-save_video(video, "video_1_Wan2.1-T2V-1.3B.mp4", fps=15, quality=5)
-
 # Remove pipe models from GPU to save memory
 pipe.load_models_to_device([])
 # Forward pass through extra modules to get motion predictions
-dit_features = return_dict.get("dit_features", None)
+dit_features = return_dict.get("dit_features", None).to(device=extra_modules.extra_modules.device)
 grid_size = return_dict.get("grid_size", None)
 assert dit_features is not None, "Dit features not returned from model_fn."
 assert grid_size is not None, "Grid size not returned from model_fn."
 pixel_coords, depth = extra_modules(dit_features, grid_size)
 motion_pred = torch.cat([pixel_coords, depth], dim=-1)
 print("motion_pred shape: ", motion_pred.shape)
-
-# Image-to-video
-dataset_snapshot_download(
-    dataset_id="DiffSynth-Studio/examples_in_diffsynth",
-    local_dir="./",
-    allow_file_pattern=["data/examples/wan/cat_fightning.jpg"]
-)
-input_image = Image.open("data/examples/wan/cat_fightning.jpg").resize((1248, 704))
-video, return_dict = pipe(
-    prompt="两只可爱的橘猫戴上拳击手套，站在一个拳击台上搏斗。",
-    negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
-    seed=0, tiled=True,
-    height=704, width=1248,
-    input_image=input_image,
-    num_frames=121,
-    num_inference_steps=3,
-    preferred_timestep_id=[-1],
-    preferred_dit_block_id=[-1],
-    return_features=True,
-)
-save_video(video, "video_2_Wan2.2-TI2V-5B.mp4", fps=15, quality=5)

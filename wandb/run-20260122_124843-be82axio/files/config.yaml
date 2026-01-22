@@ -1,0 +1,129 @@
+_wandb:
+    value:
+        cli_version: 0.24.0
+        e:
+            kh2cnvjrgtrlkj6m26hpwrbw4zhvkgk0:
+                args:
+                    - --dataset_base_path
+                    - /host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p/
+                    - --dataset_metadata_path
+                    - /host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p/metadata_walking.csv
+                    - --height
+                    - "32"
+                    - --width
+                    - "32"
+                    - --dataset_repeat
+                    - "100"
+                    - --model_id_with_origin_paths
+                    - Wan-AI/Wan2.2-TI2V-5B:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.2-TI2V-5B:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-TI2V-5B:Wan2.2_VAE.pth
+                    - --tokenizer_path
+                    - Wan-AI/Wan2.2-TI2V-5B/google/umt5-xxl/
+                    - --save_steps
+                    - "3"
+                    - --learning_rate
+                    - "1e-4"
+                    - --num_epochs
+                    - "100"
+                    - --task
+                    - dit_features
+                    - --output_path
+                    - ./models/test1
+                    - --save_name
+                    - heatmap
+                codePath: examples/wanvideo/my_scripts/training_dits_features/train_Wan2.2-TI2V-5B_dits_features.py
+                codePathLocal: examples/wanvideo/my_scripts/training_dits_features/train_Wan2.2-TI2V-5B_dits_features.py
+                cpu_count: 24
+                cpu_count_logical: 48
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "67108864"
+                        used: "12288"
+                email: puntawat-1@hotmail.com
+                executable: /conda_envs/skelag/bin/python
+                git:
+                    commit: b109714780fd8a3733d56699c86cfbcee8d8d67f
+                    remote: git@github.com:XezXey/DiffSynth-Studio.git
+                gpu: NVIDIA RTX A4000
+                gpu_count: 4
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 6144
+                      memoryTotal: "17171480576"
+                      name: NVIDIA RTX A4000
+                      uuid: GPU-83a763de-50e5-8545-bdee-4fb05718be3f
+                    - architecture: Ampere
+                      cudaCores: 6144
+                      memoryTotal: "17171480576"
+                      name: NVIDIA RTX A4000
+                      uuid: GPU-c17d7f63-8158-a88c-9efe-d30f4b290dc7
+                    - architecture: Ampere
+                      cudaCores: 6144
+                      memoryTotal: "17171480576"
+                      name: NVIDIA RTX A4000
+                      uuid: GPU-ae1af163-ccdb-036b-34b3-0a241b22d0e0
+                    - architecture: Ampere
+                      cudaCores: 6144
+                      memoryTotal: "17171480576"
+                      name: NVIDIA RTX A4000
+                      uuid: GPU-35b09f93-b3c2-8d24-a006-20ea91843854
+                host: vision16
+                memory:
+                    total: "67277783040"
+                os: Linux-5.15.0-160-generic-x86_64-with-glibc2.35
+                program: /projects/DiffSynth-Studio/examples/wanvideo/my_scripts/training_dits_features/train_Wan2.2-TI2V-5B_dits_features.py
+                python: CPython 3.11.14
+                root: /projects/DiffSynth-Studio
+                startedAt: "2026-01-22T05:48:43.147009Z"
+                writerId: kh2cnvjrgtrlkj6m26hpwrbw4zhvkgk0
+        m: []
+        python_version: 3.11.14
+        t:
+            "1":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 71
+                - 98
+            "2":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 71
+                - 98
+            "3":
+                - 13
+                - 16
+            "4": 3.11.14
+            "5": 0.24.0
+            "6": 4.57.3
+            "12": 0.24.0
+            "13": linux-x86_64
+dataset_base_path:
+    value: /host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p/
+dataset_metadata_path:
+    value: /host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p/metadata_walking.csv
+dataset_repeat:
+    value: 100
+epochs:
+    value: 100
+height:
+    value: 32
+learning_rate:
+    value: 0.0001
+model_id:
+    value: Wan-AI/Wan2.1-T2V-1.3B
+model_id_with_origin_paths:
+    value: Wan-AI/Wan2.2-TI2V-5B:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.2-TI2V-5B:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-TI2V-5B:Wan2.2_VAE.pth
+num_frames:
+    value: 81
+output_path:
+    value: ./models/test1
+save_name:
+    value: heatmap
+task:
+    value: dit_features
+width:
+    value: 32
