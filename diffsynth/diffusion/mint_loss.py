@@ -28,7 +28,8 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # 3D reconstruction from (u, v, depth) to (x, y, z) using camera intrinsics and extrinsics
     # print("motion_pred shape: ", motion_pred.shape)
 
-    gt_motion = torch.tensor(inputs["joints_3d"]).to(device=pipe.device)
+    gt_motion_3d = torch.tensor(inputs["joints_3d"]).to(device=pipe.device)
+    gt_motion_2d = torch.tensor(inputs["joints_2d"]).to(device=pipe.device)[..., :2]
     h = inputs["height"]
     w = inputs["width"]
 
@@ -36,16 +37,22 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     org_h = cx * 2.0
     org_w = cy * 2.0
     E_bl = torch.tensor(inputs["cams_extr"]).to(device=pipe.device)
-    u = pixel_coords[..., 0] * org_w
-    v = pixel_coords[..., 1] * org_h
+    u = pixel_coords[..., 0] * org_w    # B, J, T
+    v = pixel_coords[..., 1] * org_h    # B, J, T
     d = depth[..., 0]
     
-    motion_pred = unproject_torch(fx, fy, cx, cy, E_bl, torch.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
-    training_target = gt_motion
-    assert motion_pred.shape == training_target.shape, f"motion_pred shape {motion_pred.shape} does not match training_target shape {training_target.shape}"
+    motion_pred_2d = torch.stack([u, v], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T, 2
+    motion_pred_3d = unproject_torch(fx, fy, cx, cy, E_bl, torch.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
+    training_target_3d = gt_motion_3d
+    assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
+    assert motion_pred_2d.shape == gt_motion_2d.shape, f"motion_pred_2d shape {motion_pred_2d.shape} does not match gt_motion_2d shape {gt_motion_2d.shape}"
 
-    loss = torch.nn.functional.mse_loss(motion_pred.float(), training_target.float())
-    inputs.update({"motion_pred": motion_pred, "training_target": training_target})
+    loss_3d = torch.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
+    loss_2d = torch.nn.functional.mse_loss(motion_pred_2d.float(), gt_motion_2d.float())
+    loss = loss_3d + loss_2d
+    
+    inputs.update({"motion_pred": motion_pred_3d, "training_target": training_target_3d, 
+                   "motion_pred_2d": motion_pred_2d, "gt_motion_2d": gt_motion_2d})
     return loss, inputs
 
 def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
