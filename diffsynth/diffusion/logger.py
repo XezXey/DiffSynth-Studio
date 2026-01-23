@@ -2,7 +2,7 @@ import os, torch
 import plotly
 import wandb
 from accelerate import Accelerator
-from ..utils.vis.vis import MultiSkeleton3DAnimator
+from ..utils.vis.vis import MultiSkeleton3DAnimator, MultiSkeleton2D3DAnimator
 
 class ModelLogger:
     def __init__(self, output_path, remove_prefix_in_ckpt=None, state_dict_converter=lambda x:x):
@@ -80,21 +80,31 @@ class TrainingLogger:
         self.training_logger.log({"loss": loss})
     
     def log_predictions(self, pred_dict: dict):
-        motion_pred = pred_dict['motion_pred'].detach().cpu().numpy()
-        motion_gt = pred_dict['training_target'].detach().cpu().numpy()
-        if motion_gt.shape[0] == 1:
-            motion_gt = motion_gt[0]
-        if motion_pred.shape[0] == 1:
-            motion_pred = motion_pred[0]
-        print(motion_pred.shape)
-        print(motion_gt.shape)
+        motion_pred_3d = pred_dict['motion_pred'].detach().cpu().numpy()
+        motion_gt_3d = pred_dict['training_target'].detach().cpu().numpy()
+        if motion_gt_3d.shape[0] == 1:
+            motion_gt_3d = motion_gt_3d[0]
+        if motion_pred_3d.shape[0] == 1:
+            motion_pred_3d = motion_pred_3d[0]
+        
+        motion_gt_2d = pred_dict['gt_motion_2d'].detach().cpu().numpy()
+        motion_pred_2d = pred_dict['motion_pred_2d'].detach().cpu().numpy()
+        if motion_gt_2d.shape[0] == 1:
+            motion_gt_2d = motion_gt_2d[0]
+        if motion_pred_2d.shape[0] == 1:
+            motion_pred_2d = motion_pred_2d[0]
+            
+        print(motion_pred_3d.shape)
+        print(motion_gt_3d.shape)
+        print(motion_pred_2d.shape)
+        print(motion_gt_2d.shape)
         joint_names = pred_dict['joint_names']
         bones = pred_dict['bones']
         edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
 
-        anim = MultiSkeleton3DAnimator(fps=30, title="Motions")
-        anim.add_sequence(motion_gt, edges=edges, color="blue", name="Ground Truth")
-        anim.add_sequence(motion_pred, edges=edges, color="red",  name="Prediction")
+        anim = MultiSkeleton2D3DAnimator(fps=30, title="Motions", y_axis_down=True)
+        anim.add_sequence(motion_gt_3d, K2=motion_gt_2d,edges=edges, color="blue", name="Ground Truth")
+        anim.add_sequence(motion_pred_3d, K2=motion_pred_2d, edges=edges, color="red",  name="Prediction")
         # Save to html
         save_path = os.path.join(self.log_dir, f"motion_pred_step_{self.num_steps}.html")
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)

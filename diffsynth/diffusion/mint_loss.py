@@ -30,15 +30,15 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
 
 
     fx, fy, cx, cy = inputs["cams_intr"]
-    org_h = cy * 2.0
-    org_w = cx * 2.0
+    org_h = cy * 2.0 + 1
+    org_w = cx * 2.0 + 1
     E_bl = torch.tensor(inputs["cams_extr"]).to(device=pipe.device)
     
     
     gt_motion_3d = torch.tensor(inputs["joints_3d"]).to(device=pipe.device)
     gt_motion_2d = torch.tensor(inputs["joints_2d"]).to(device=pipe.device)[..., :2]
-    gt_motion_2d[..., 0] = gt_motion_2d[..., 0] / org_w    # normalize to [0,1]
-    gt_motion_2d[..., 1] = gt_motion_2d[..., 1] / org_h    # normalize to [0,1]
+    gt_motion_2d[..., 0] = gt_motion_2d[..., 0] / (org_w - 1)     # normalize to [0,1]
+    gt_motion_2d[..., 1] = gt_motion_2d[..., 1] / (org_h - 1)   # normalize to [0,1]
     mask_2d = torch.logical_and(gt_motion_2d >= 0.0, gt_motion_2d <= 1.0)
     
     h = inputs["height"]
@@ -47,7 +47,7 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     v = pixel_coords[..., 1] * org_h    # B, J, T
     d = depth[..., 0]
     
-    motion_pred_2d = torch.stack([u / org_w, v / org_h], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T, 2
+    motion_pred_2d = torch.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
     motion_pred_3d = unproject_torch(fx, fy, cx, cy, E_bl, torch.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
     training_target_3d = gt_motion_3d
     assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
