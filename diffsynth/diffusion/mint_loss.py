@@ -43,8 +43,8 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     
     h = inputs["height"]
     w = inputs["width"]
-    u = pixel_coords[..., 0] * org_w    # B, J, T
-    v = pixel_coords[..., 1] * org_h    # B, J, T
+    u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
+    v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
     d = depth[..., 0]
     
     motion_pred_2d = torch.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
