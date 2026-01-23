@@ -156,8 +156,8 @@ class WanTrainingModule(DiffusionTrainingModule):
         inputs = self.transfer_data_to_device(inputs, self.pipe.device, self.pipe.torch_dtype)
         for unit in self.pipe.units:
             inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
-        loss = self.task_to_loss[self.task](self.pipe, *inputs)
-        return loss
+        loss, pred_dict = self.task_to_loss[self.task](self.pipe, *inputs)
+        return loss, pred_dict
 
 
 if __name__ == "__main__":
@@ -266,6 +266,7 @@ if __name__ == "__main__":
 
     training_logger = TrainingLogger(
         wandb_logger,
+        args.output_path + "/wandb",
     )
 
     launcher_map = {

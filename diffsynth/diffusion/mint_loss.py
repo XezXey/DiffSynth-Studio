@@ -45,7 +45,8 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     assert motion_pred.shape == training_target.shape, f"motion_pred shape {motion_pred.shape} does not match training_target shape {training_target.shape}"
 
     loss = torch.nn.functional.mse_loss(motion_pred.float(), training_target.float())
-    return loss, inputs.update({"motion_pred": motion_pred, "training_target": training_target})
+    inputs.update({"motion_pred": motion_pred, "training_target": training_target})
+    return loss, inputs
 
 def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
     """

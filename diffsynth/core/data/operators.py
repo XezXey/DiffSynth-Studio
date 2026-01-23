@@ -154,7 +154,7 @@ class LoadMotion(DataProcessingOperator):
         return num_frames
 
     def __call__(self, data: str):
-        print(data)
+        # print(data)
         motion_data = np.load(data)
         j3d = motion_data["joints_3d"]  # (T, J, 3)
         j2d = motion_data["joints_2d"]  # (T, J, 2)
