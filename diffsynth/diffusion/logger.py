@@ -100,8 +100,6 @@ class TrainingLogger:
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
         # Log html to wandb
         self.training_logger.log({"motion_prediction": wandb.Html(open(save_path))})
-        exit()
-        pass
 
 
         
