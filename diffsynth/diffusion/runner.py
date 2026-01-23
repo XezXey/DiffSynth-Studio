@@ -81,6 +81,7 @@ def launch_training_task_add_modules(
     weight_decay: float = 1e-2,
     num_workers: int = 1,
     save_steps: int = None,
+    vis_steps: int = None,
     num_epochs: int = 1,
     args = None,
 ):
@@ -90,7 +91,11 @@ def launch_training_task_add_modules(
         weight_decay = args.weight_decay
         num_workers = args.dataset_num_workers
         save_steps = args.save_steps
+        vis_steps = args.vis_steps
         num_epochs = args.num_epochs
+    print("Training with additional modules...")
+    print("Save steps: ", save_steps)
+    print("Visualization steps: ", vis_steps)
     
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
@@ -109,9 +114,9 @@ def launch_training_task_add_modules(
                 accelerator.backward(loss)
                 optimizer.step()
                 model_logger.on_step_end(accelerator, model, save_steps, name=name)
-                training_logger.on_step_end(accelerator, loss, pred_dict, save_steps)
+                training_logger.on_step_end(accelerator, loss, pred_dict, vis_steps)
                 scheduler.step()
         if save_steps is None:
             model_logger.on_epoch_end(accelerator, model, epoch_id, name=name)
-            training_logger.on_epoch_end(loss, pred_dict, save_steps)
+            training_logger.on_epoch_end(loss, pred_dict, vis_steps)
         model_logger.on_training_end(accelerator, model, save_steps, name=name)

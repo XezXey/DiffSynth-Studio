@@ -60,11 +60,11 @@ class TrainingLogger:
         self.num_steps = 0
         self.log_dir = log_dir
 
-    def on_step_end(self, accelerator: Accelerator, loss, pred_dict: dict, save_steps=None):
+    def on_step_end(self, accelerator: Accelerator, loss, pred_dict: dict, vis_steps=None):
         self.num_steps += 1
         accelerator.wait_for_everyone()
         if accelerator.is_main_process:
-            if save_steps is not None and self.num_steps % save_steps == 0:
+            if vis_steps is not None and self.num_steps % vis_steps == 0:
                 # Log loss
                 self.log_loss(loss.item())
                 # Log predictions
