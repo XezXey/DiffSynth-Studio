@@ -71,6 +71,30 @@ def launch_data_process_task(
                 data = model(data)
                 torch.save(data, save_path)
 
+def launch_data_process_task_add_modules(
+    accelerator: Accelerator,
+    dataset: torch.utils.data.Dataset,
+    model: DiffusionTrainingModule,
+    model_logger: ModelLogger,
+    training_logger: TrainingLogger,
+    num_workers: int = 8,
+    args = None,
+):
+    if args is not None:
+        num_workers = args.dataset_num_workers
+        
+    dataloader = torch.utils.data.DataLoader(dataset, shuffle=False, collate_fn=lambda x: x[0], num_workers=num_workers)
+    model, dataloader = accelerator.prepare(model, dataloader)
+    
+    for data_id, data in enumerate(tqdm(dataloader)):
+        with accelerator.accumulate(model):
+            with torch.no_grad():
+                folder = os.path.join(model_logger.output_path, str(accelerator.process_index))
+                os.makedirs(folder, exist_ok=True)
+                save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), f"{data_id}.pth")
+                data = model(data)
+                torch.save(data, save_path)
+
 def launch_training_task_add_modules(
     accelerator: Accelerator,
     dataset: torch.utils.data.Dataset,
@@ -114,9 +138,11 @@ def launch_training_task_add_modules(
                 accelerator.backward(loss)
                 optimizer.step()
                 model_logger.on_step_end(accelerator, model, save_steps, name=name)
-                training_logger.on_step_end(accelerator, loss, pred_dict, vis_steps)
+                if training_logger is not None:
+                    training_logger.on_step_end(accelerator, loss, pred_dict, vis_steps)
                 scheduler.step()
         if save_steps is None:
             model_logger.on_epoch_end(accelerator, model, epoch_id, name=name)
-            training_logger.on_epoch_end(loss, pred_dict, vis_steps)
+            if training_logger is not None:
+                training_logger.on_epoch_end(loss, pred_dict, vis_steps)
         model_logger.on_training_end(accelerator, model, save_steps, name=name)

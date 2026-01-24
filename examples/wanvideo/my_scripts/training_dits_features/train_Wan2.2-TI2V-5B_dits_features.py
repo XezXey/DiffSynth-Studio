@@ -34,6 +34,7 @@ def wan_parser():
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
     #NOTE: Extra parameters for training additional modules
     parser.add_argument("--save_name", type=str, default=None, help="Name to use when saving checkpoints.")
+    parser.add_argument("--use_wandb", default=False, action="store_true", help="Whether to use wandb for logging.")
     return parser
 
 class WanTrainingModule(DiffusionTrainingModule):
@@ -228,48 +229,54 @@ if __name__ == "__main__":
         min_timestep_boundary=args.min_timestep_boundary,
     )
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
-    wandb_logger = wandb.init(
-        # Set the wandb entity where your project will be logged (generally your team name).
-        entity="xezxey",
-        # Set the wandb project where this run will be logged.
-        project="SkelAg",
-        # Name of this run
-        name=args.save_name,
-        # Track hyperparameters and run metadata.
-        config={
-            # Model info
-            "model_id": "Wan-AI/Wan2.1-T2V-1.3B",
-            "model_id_with_origin_paths": args.model_id_with_origin_paths,
-            # Training info
-            "learning_rate": args.learning_rate,
-            "epochs": args.num_epochs,
-            "task": "dit_features",
-            "dataset_repeat": args.dataset_repeat,
-            "height": args.height,
-            "width": args.width,
-            "num_frames": args.num_frames,
-            # Saving info
-            "output_path": args.output_path,
-            "save_name": args.save_name,
-            # Dataset info
-            "dataset_base_path": args.dataset_base_path,
-            "dataset_metadata_path": args.dataset_metadata_path,
-        },
-        dir=args.output_path + "/wandb",
+    if args.use_wandb:
+        print("Using wandb logger...")
+        wandb_logger = wandb.init(
+            # Set the wandb entity where your project will be logged (generally your team name).
+            entity="xezxey",
+            # Set the wandb project where this run will be logged.
+            project="SkelAg",
+            # Name of this run
+            name=args.save_name,
+            # Track hyperparameters and run metadata.
+            config={
+                # Model info
+                "model_id": "Wan-AI/Wan2.1-T2V-1.3B",
+                "model_id_with_origin_paths": args.model_id_with_origin_paths,
+                # Training info
+                "learning_rate": args.learning_rate,
+                "epochs": args.num_epochs,
+                "task": "dit_features",
+                "dataset_repeat": args.dataset_repeat,
+                "height": args.height,
+                "width": args.width,
+                "num_frames": args.num_frames,
+                # Saving info
+                "output_path": args.output_path,
+                "save_name": args.save_name,
+                # Dataset info
+                "dataset_base_path": args.dataset_base_path,
+                "dataset_metadata_path": args.dataset_metadata_path,
+            },
+            dir=args.output_path + "/wandb",
 
-    )
+        )
+
+        training_logger = TrainingLogger(
+            wandb_logger,
+            args.output_path + "/wandb",
+        )
+    else: 
+        print("No training logger is used.")
+        training_logger = None
 
     model_logger = ModelLogger(
         args.output_path,
         remove_prefix_in_ckpt=args.remove_prefix_in_ckpt,
     )
 
-    training_logger = TrainingLogger(
-        wandb_logger,
-        args.output_path + "/wandb",
-    )
-
     launcher_map = {
         "dit_features": launch_training_task_add_modules,
+        "dit_features:data_process": launch_data_process_task_add_modules,
     }
     launcher_map[args.task](accelerator, dataset, model, model_logger, training_logger, args=args)
