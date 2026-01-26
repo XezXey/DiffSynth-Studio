@@ -25,17 +25,17 @@ import wandb
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 os.environ["DIFFSYNTH_DOWNLOAD_SOURCE"] = "huggingface"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# # CPU Offload
-vram_config = {
-    "offload_dtype": torch.bfloat16,
-    "offload_device": "cpu",
-    "onload_dtype": torch.bfloat16,
-    "onload_device": "cuda",
-    "preparing_dtype": torch.bfloat16,
-    "preparing_device": "cuda",
-    "computation_dtype": torch.bfloat16,
-    "computation_device": "cuda",
-}
+# # # CPU Offload
+# vram_config = {
+#     "offload_dtype": torch.bfloat16,
+#     "offload_device": "cpu",
+#     "onload_dtype": torch.bfloat16,
+#     "onload_device": "cuda",
+#     "preparing_dtype": torch.bfloat16,
+#     "preparing_device": "cuda",
+#     "computation_dtype": torch.bfloat16,
+#     "computation_device": "cuda",
+# }
 
 def wan_parser():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
@@ -107,7 +107,7 @@ class WanTrainingModule(DiffusionTrainingModule):
                 dit_dim=self.pipe.dit.dim,
                 head_out_dim=self.pipe.dit.out_dim,
                 flatten_dim=256, #TODO: Fix this!!!
-                vae_latent_dim=self.pipe.vae.z_dim,
+                vae_latent_dim=16# self.pipe.vae.z_dim,
                 patch_size=self.pipe.dit.patch_size,
                 device=self.pipe.device
             )
