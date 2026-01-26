@@ -23,6 +23,7 @@ seed_everything(47)
 import wandb
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
+os.environ["DIFFSYNTH_DOWNLOAD_SOURCE"] = "huggingface"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # # CPU Offload
 vram_config = {

@@ -77,7 +77,7 @@ class TrainingLogger:
             self.log_loss(loss.item())
     
     def log_loss(self, loss):
-        self.training_logger.log({"loss": loss})
+        self.training_logger.log({"loss": loss, "step": self.num_steps})
     
     def log_predictions(self, pred_dict: dict):
         motion_pred_3d = pred_dict['motion_pred'].detach().cpu().numpy()
@@ -109,7 +109,7 @@ class TrainingLogger:
         save_path = os.path.join(self.log_dir, f"motion_pred_step_{self.num_steps}.html")
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
         # Log html to wandb
-        self.training_logger.log({"motion_prediction": wandb.Html(open(save_path))})
+        self.training_logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": self.num_steps})
 
 
         
