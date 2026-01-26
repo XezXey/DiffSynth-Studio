@@ -7,6 +7,19 @@ from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionUpsample
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
+def seed_everything(seed: int):
+    import random
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+seed_everything(47)
+
+
 import wandb
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
@@ -40,7 +53,12 @@ def wan_parser():
 class WanTrainingModule(DiffusionTrainingModule):
     def __init__(
         self,
-        pipe: WanVideoPipeline,
+        # pipe: WanVideoPipeline,
+        model_paths=None, model_id_with_origin_paths=None,
+        tokenizer_path=None, audio_processor_path=None,
+        trainable_models=None,
+        lora_base_model=None, lora_target_modules="", lora_rank=32, lora_checkpoint=None,
+        preset_lora_path=None, preset_lora_model=None,
         preferred_timestep_id=[-1],   # Use last timestep by default to train on dit features
         preferred_dit_block_id=[-1],    # Use last block by default to train on dit features
         use_gradient_checkpointing=True,
@@ -61,9 +79,11 @@ class WanTrainingModule(DiffusionTrainingModule):
             use_gradient_checkpointing = True
         
         # Load models
-        self.pipe = pipe
-        # self.pipe = self.split_pipeline_units(task, self.pipe, trainable_models, lora_base_model)
-        
+        model_configs = self.parse_model_configs(model_paths, model_id_with_origin_paths, fp8_models=fp8_models, offload_models=offload_models, device=device)
+        tokenizer_config = ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/") if tokenizer_path is None else ModelConfig(tokenizer_path)
+        self.pipe = WanVideoPipeline.from_pretrained(torch_dtype=torch.bfloat16, device=device, model_configs=model_configs, tokenizer_config=tokenizer_config, redirect_common_files=False)
+        self.pipe = self.split_pipeline_units(task, self.pipe, trainable_models, lora_base_model)
+
         # Store other configs
         self.use_gradient_checkpointing = use_gradient_checkpointing
         self.use_gradient_checkpointing_offload = use_gradient_checkpointing_offload
@@ -78,24 +98,27 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        self.extra_modules = JointHeatMapMotionUpsample(
-            n_joints=65,
-            dit_dim=pipe.dit.dim,
-            head_out_dim=pipe.dit.out_dim,
-            flatten_dim=256, #TODO: Fix this!!!
-            vae_latent_dim=pipe.vae.z_dim,
-            patch_size=pipe.dit.patch_size,
-            device=pipe.device
-        )
+        # self.extra_modules = JointHeatMapMotionUpsample(
+        #     n_joints=65,    #TODO: Fix this!!!
+        #     dit_dim=self.pipe.dit.dim,
+        #     head_out_dim=self.pipe.dit.out_dim,
+        #     flatten_dim=256, #TODO: Fix this!!!
+        #     vae_latent_dim=self.pipe.vae.z_dim,
+        #     patch_size=self.pipe.dit.patch_size,
+        #     device=self.pipe.device
+        # )
+        self.extra_modules = None
+
         # Training mode
         self.switch_pipe_to_training_mode(
             self.pipe,
-            task="dit_features",
+            task=task,
         )
 
         self.task = task
         self.task_to_loss = {
             "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
+            "dit_features:data_process": lambda pipe, *args: args,
         }
 
 
@@ -157,7 +180,12 @@ class WanTrainingModule(DiffusionTrainingModule):
         inputs = self.transfer_data_to_device(inputs, self.pipe.device, self.pipe.torch_dtype)
         for unit in self.pipe.units:
             inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
-        loss, pred_dict = self.task_to_loss[self.task](self.pipe, *inputs)
+
+        if ':data_process' in self.task:
+            loss = self.task_to_loss[self.task](self.pipe, *inputs)
+            pred_dict = {}
+        else:
+            loss, pred_dict = self.task_to_loss[self.task](self.pipe, *inputs)
         return loss, pred_dict
 
 
@@ -202,29 +230,45 @@ if __name__ == "__main__":
             "input_audio": ToAbsolutePath(args.dataset_base_path) >> LoadAudio(sr=16000),
         }
     )
-    pipe = WanVideoPipeline.from_pretrained(
-        torch_dtype=torch.bfloat16,
-        device="cuda",
-        # model_configs=[
-        #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
-        #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
-        #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="Wan2.2_VAE.pth", **vram_config),
-        # ],
-        model_configs=[
-            ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
-            ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
-            ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="Wan2.1_VAE.pth", **vram_config),
-        ],
-        tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
-        redirect_common_files=False,
-        vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 0.5,
-        return_features=True
-    )
+    # pipe = WanVideoPipeline.from_pretrained(
+    #     torch_dtype=torch.bfloat16,
+    #     device="cuda",
+    #     # model_configs=[
+    #     #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
+    #     #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
+    #     #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="Wan2.2_VAE.pth", **vram_config),
+    #     # ],
+    #     model_configs=[
+    #         ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
+    #         ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
+    #         ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="Wan2.1_VAE.pth", **vram_config),
+    #     ],
+    #     tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
+    #     redirect_common_files=False,
+    #     vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 0.5,
+    #     return_features=True
+    # )
     
     model = WanTrainingModule(
-        pipe=pipe,
+        # pipe=pipe,
+        model_paths=args.model_paths,
+        model_id_with_origin_paths=args.model_id_with_origin_paths,
+        tokenizer_path=args.tokenizer_path,
+        audio_processor_path=args.audio_processor_path,
+        trainable_models=args.trainable_models,
+        lora_base_model=args.lora_base_model,
+        lora_target_modules=args.lora_target_modules,
+        lora_rank=args.lora_rank,
+        lora_checkpoint=args.lora_checkpoint,
+        preset_lora_path=args.preset_lora_path,
+        preset_lora_model=args.preset_lora_model,
+        use_gradient_checkpointing=args.use_gradient_checkpointing,
+        use_gradient_checkpointing_offload=args.use_gradient_checkpointing_offload,
+        extra_inputs=args.extra_inputs,
+        fp8_models=args.fp8_models,
+        offload_models=args.offload_models,
         device="cuda",
-        task="dit_features",
+        task=args.task,
         max_timestep_boundary=args.max_timestep_boundary,
         min_timestep_boundary=args.min_timestep_boundary,
     )

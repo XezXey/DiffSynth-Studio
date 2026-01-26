@@ -94,6 +94,7 @@ class ModelConfig:
             self.local_model_path = "./models"
 
     def download_if_necessary(self):
+        #NOTE: If want to use model_id and origin_file_pattern, please do not set `path`.
         self.check_input()
         self.reset_local_model_path()
         if self.require_downloading():
