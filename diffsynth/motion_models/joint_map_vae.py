@@ -248,6 +248,7 @@ class JointHeatMapMotionUpsample(th.nn.Module):
         """
         head_dim = self.dit_dim // self.num_heads
         x = dit_features.to(dtype=pipe.torch_dtype, device=pipe.device)
+        print(x.dtype)
         x_flat = rearrange(x, 'n b f d -> b (n f) d')
 
         # Self-attention on dit features + 1D RoPE
