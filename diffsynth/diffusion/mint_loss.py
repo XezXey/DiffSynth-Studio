@@ -17,8 +17,8 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
     noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
 
-    dit_features = return_dict.get("dit_features", None).to(dtype=pipe.torch_dtype, device=pipe.device)
-    grid_size = return_dict.get("grid_size", None).to(dtype=pipe.torch_dtype, device=pipe.device)
+    dit_features = return_dict.get("dit_features", None)
+    grid_size = return_dict.get("grid_size", None)
     assert dit_features is not None, "Dit features not returned from model_fn."
     assert grid_size is not None, "Grid size not returned from model_fn."
 

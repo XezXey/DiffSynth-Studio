@@ -247,7 +247,7 @@ class JointHeatMapMotionUpsample(th.nn.Module):
             - d: dit feature dimension (usually 1536)
         """
         head_dim = self.dit_dim // self.num_heads
-        x = dit_features
+        x = dit_features.to(dtype=pipe.torch_dtype, device=pipe.device)
         x_flat = rearrange(x, 'n b f d -> b (n f) d')
 
         # Self-attention on dit features + 1D RoPE
