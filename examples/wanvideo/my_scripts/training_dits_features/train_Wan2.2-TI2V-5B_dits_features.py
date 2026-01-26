@@ -95,8 +95,6 @@ class WanTrainingModule(DiffusionTrainingModule):
 
         self.preferred_timestep_id = preferred_timestep_id
         self.preferred_dit_block_id = preferred_dit_block_id
-        print(self.pipe.device)
-        exit()
 
         # Use Wan models as frozen models
         self.force_no_grad()
