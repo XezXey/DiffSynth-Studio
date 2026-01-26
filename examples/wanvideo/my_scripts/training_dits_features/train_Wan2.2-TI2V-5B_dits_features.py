@@ -107,7 +107,7 @@ class WanTrainingModule(DiffusionTrainingModule):
                 dit_dim=self.pipe.dit.dim,
                 head_out_dim=self.pipe.dit.out_dim,
                 flatten_dim=256, #TODO: Fix this!!!
-                vae_latent_dim=16# self.pipe.vae.z_dim,
+                vae_latent_dim=16, # self.pipe.vae.z_dim,
                 patch_size=self.pipe.dit.patch_size,
                 device=self.pipe.device
             )
