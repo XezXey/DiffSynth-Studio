@@ -93,6 +93,9 @@ def launch_data_process_task_add_modules(
                 os.makedirs(folder, exist_ok=True)
                 save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), f"{data_id}.pth")
                 data = model(data)
+                if data[1] == {}:
+                    # Only return the processed data, Discard pred_dict
+                    data = data[0]
                 torch.save(data, save_path)
 
 def launch_training_task_add_modules(
@@ -132,7 +135,7 @@ def launch_training_task_add_modules(
             with accelerator.accumulate(model):
                 optimizer.zero_grad()
                 if dataset.load_from_cache:
-                    loss = model({}, inputs=data)
+                    loss, pred_dict = model({}, inputs=data)
                 else:
                     loss, pred_dict = model(data)
                 accelerator.backward(loss)

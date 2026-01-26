@@ -81,7 +81,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Load models
         model_configs = self.parse_model_configs(model_paths, model_id_with_origin_paths, fp8_models=fp8_models, offload_models=offload_models, device=device)
         tokenizer_config = ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/") if tokenizer_path is None else ModelConfig(tokenizer_path)
-        self.pipe = WanVideoPipeline.from_pretrained(torch_dtype=torch.bfloat16, device=device, model_configs=model_configs, tokenizer_config=tokenizer_config, redirect_common_files=False)
+        self.pipe = WanVideoPipeline.from_pretrained(torch_dtype=torch.bfloat16, device=device, model_configs=model_configs, tokenizer_config=tokenizer_config, redirect_common_files=False, return_features=True)
         self.pipe = self.split_pipeline_units(task, self.pipe, trainable_models, lora_base_model)
 
         # Store other configs
@@ -98,16 +98,18 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        # self.extra_modules = JointHeatMapMotionUpsample(
-        #     n_joints=65,    #TODO: Fix this!!!
-        #     dit_dim=self.pipe.dit.dim,
-        #     head_out_dim=self.pipe.dit.out_dim,
-        #     flatten_dim=256, #TODO: Fix this!!!
-        #     vae_latent_dim=self.pipe.vae.z_dim,
-        #     patch_size=self.pipe.dit.patch_size,
-        #     device=self.pipe.device
-        # )
-        self.extra_modules = None
+        if ":data_process" in task:
+            self.extra_modules = None
+        else:
+            self.extra_modules = JointHeatMapMotionUpsample(
+                n_joints=65,    #TODO: Fix this!!!
+                dit_dim=self.pipe.dit.dim,
+                head_out_dim=self.pipe.dit.out_dim,
+                flatten_dim=256, #TODO: Fix this!!!
+                vae_latent_dim=self.pipe.vae.z_dim,
+                patch_size=self.pipe.dit.patch_size,
+                device=self.pipe.device
+            )
 
         # Training mode
         self.switch_pipe_to_training_mode(
@@ -118,6 +120,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.task = task
         self.task_to_loss = {
             "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
+            "dit_features:train": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
             "dit_features:data_process": lambda pipe, *args: args,
         }
 
@@ -143,8 +146,6 @@ class WanTrainingModule(DiffusionTrainingModule):
             "input_video": data["video"],
             "height": data["video"][0].size[1],
             "width": data["video"][0].size[0],
-
-            # "original_height": ,
             "num_frames": len(data["video"]),
             # Please do not modify the following parameters
             # unless you clearly know what this will cause.
@@ -290,7 +291,7 @@ if __name__ == "__main__":
                 # Training info
                 "learning_rate": args.learning_rate,
                 "epochs": args.num_epochs,
-                "task": "dit_features",
+                "task": args.task,
                 "dataset_repeat": args.dataset_repeat,
                 "height": args.height,
                 "width": args.width,
@@ -321,6 +322,7 @@ if __name__ == "__main__":
 
     launcher_map = {
         "dit_features": launch_training_task_add_modules,
+        "dit_features:train": launch_training_task_add_modules,
         "dit_features:data_process": launch_data_process_task_add_modules,
     }
     launcher_map[args.task](accelerator, dataset, model, model_logger, training_logger, args=args)
