@@ -10,6 +10,8 @@ parser.add_argument("--input_image", type=str, default="data/examples/wan/cat_fi
 parser.add_argument("--height", type=int, default=704)
 parser.add_argument("--width", type=int, default=1248)
 parser.add_argument("--num_frames", type=int, default=121)
+parser.add_argument("--prompt", type=str, default="The girl in the input image walks straight forward naturally, with smooth and realistic walking motion. Her identity, clothing, hairstyle, and facial features remain unchanged. The camera is static, with no zoom, pan, or perspective change.")
+parser.add_argument("--negative_prompt", type=str, default="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting")
 args = parser.parse_args()
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
@@ -41,8 +43,8 @@ pipe = WanVideoPipeline.from_pretrained(
 # Image-to-video
 input_image = Image.open(args.input_image).convert('RGB').resize((args.width, args.height))
 video = pipe(
-    prompt="The girl in the input image walks straight forward naturally, with smooth and realistic walking motion. Her identity, clothing, hairstyle, and facial features remain unchanged. The camera is static, with no zoom, pan, or perspective change.",
-    negative_prompt="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting",
+    prompt=args.prompt,
+    negative_prompt=args.negative_prompt,
     seed=0, tiled=True,
     height=args.height, width=args.width,
     input_image=input_image,
