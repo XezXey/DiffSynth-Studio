@@ -12,6 +12,7 @@ parser.add_argument("--width", type=int, default=1248)
 parser.add_argument("--num_frames", type=int, default=121)
 parser.add_argument("--prompt", type=str, default="The girl in the input image walks straight forward naturally, with smooth and realistic walking motion. Her identity, clothing, hairstyle, and facial features remain unchanged. The camera is static, with no zoom, pan, or perspective change.")
 parser.add_argument("--negative_prompt", type=str, default="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting")
+parser.add_argument("--save_suffix", type=str, default=None)
 args = parser.parse_args()
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
@@ -51,4 +52,9 @@ video = pipe(
     num_frames=args.num_frames,
     # num_inference_steps=100
 )
-save_video(video, f"video_2_Wan2.2-TI2V-5B_{os.path.basename(args.input_image).split('.')[0]}.mp4", fps=20, quality=5)
+if args.save_suffix is None:
+    save_name = f"video_2_Wan2.2-TI2V-5B_{os.path.basename(args.input_image).split('.')[0]}.mp4"
+else:
+    save_name = f"video_2_Wan2.2-TI2V-5B_{os.path.basename(args.input_image).split('.')[0]}_{args.save_suffix}.mp4"
+
+save_video(video, save_name, fps=20, quality=5)
