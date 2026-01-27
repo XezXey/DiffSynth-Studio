@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--input_image", type=str, default="data/examples/wan/cat_fightning.jpg")
 parser.add_argument("--height", type=int, default=704)
 parser.add_argument("--width", type=int, default=1248)
-parser.add_argument("--num_frames", type=int, default=81)
+parser.add_argument("--num_frames", type=int, default=121)
 args = parser.parse_args()
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
@@ -41,7 +41,7 @@ pipe = WanVideoPipeline.from_pretrained(
 # Image-to-video
 input_image = Image.open(args.input_image).convert('RGB').resize((args.width, args.height))
 video = pipe(
-    prompt="A young girl from the input image starts walking forward naturally. Her body shows smooth, realistic walking motion with coordinated arm swings and leg strides. The character identity, clothing, hairstyle, and facial features remain exactly the same as the input image. Static camera perspective, no zoom or pan.",
+    prompt="The girl in the input image walks straight forward naturally, with smooth and realistic walking motion. Her identity, clothing, hairstyle, and facial features remain unchanged. The camera is static, with no zoom, pan, or perspective change.",
     negative_prompt="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting",
     seed=0, tiled=True,
     height=args.height, width=args.width,
@@ -49,4 +49,4 @@ video = pipe(
     num_frames=args.num_frames,
     # num_inference_steps=100
 )
-save_video(video, f"video_2_Wan2.2-TI2V-5B_{os.path.basename(args.input_image).split('.')[0]}.mp4", fps=15, quality=5)
+save_video(video, f"video_2_Wan2.2-TI2V-5B_{os.path.basename(args.input_image).split('.')[0]}.mp4", fps=20, quality=5)
