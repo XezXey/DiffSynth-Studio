@@ -1680,7 +1680,7 @@ def model_fn_wan_video(
         x = x[:, reference_latents.shape[1]:]
         f -= 1
     x = dit.unpatchify(x, (f, h, w))
-    return x
+    return x, {}
 
 
 def model_fn_longcat_video(
