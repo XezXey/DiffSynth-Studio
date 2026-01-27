@@ -313,12 +313,18 @@ class WanVideoPipeline(BasePipeline):
             timestep = timestep.unsqueeze(0).to(dtype=self.torch_dtype, device=self.device)
             
             # Inference
-            noise_pred_posi, return_dict_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
+            if return_features:
+                noise_pred_posi, return_dict_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
+            else:
+                noise_pred_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
             if cfg_scale != 1.0:
                 if cfg_merge:
                     noise_pred_posi, noise_pred_nega = noise_pred_posi.chunk(2, dim=0)
                 else:
-                    noise_pred_nega, return_dict_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
+                    if return_features:
+                        noise_pred_nega, return_dict_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
+                    else:
+                        noise_pred_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
                 noise_pred = noise_pred_nega + cfg_scale * (noise_pred_posi - noise_pred_nega)
             else:
                 noise_pred = noise_pred_posi
@@ -1680,7 +1686,7 @@ def model_fn_wan_video(
         x = x[:, reference_latents.shape[1]:]
         f -= 1
     x = dit.unpatchify(x, (f, h, w))
-    return x, {}
+    return x
 
 
 def model_fn_longcat_video(
