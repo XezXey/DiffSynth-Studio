@@ -45,7 +45,7 @@ dataset_snapshot_download(
     local_dir="./",
     allow_file_pattern=["data/examples/wan/cat_fightning.jpg"]
 )
-input_image = Image.open(args.input_image).resize((args.width, args.height))
+input_image = Image.open(args.input_image).convert("RGB").resize((args.width, args.height))
 
 video = pipe(
     prompt=args.prompt,
