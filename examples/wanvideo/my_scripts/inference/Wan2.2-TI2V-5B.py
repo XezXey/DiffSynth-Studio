@@ -36,7 +36,7 @@ pipe = WanVideoPipeline.from_pretrained(
 )
 
 # Image-to-video
-input_image = Image.open(args.input_image).resize((1248, 704))
+input_image = Image.open(args.input_image).convert('RGB').resize((1248, 704))
 video = pipe(
     prompt="A young girl from the input image starts walking forward naturally. Her body shows smooth, realistic walking motion with coordinated arm swings and leg strides. The character identity, clothing, hairstyle, and facial features remain exactly the same as the input image. Static camera perspective, no zoom or pan.",
     negative_prompt="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting",
