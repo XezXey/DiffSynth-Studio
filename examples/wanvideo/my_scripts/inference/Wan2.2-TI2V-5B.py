@@ -7,6 +7,9 @@ from modelscope import dataset_snapshot_download
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--input_image", type=str, default="data/examples/wan/cat_fightning.jpg")
+parser.add_argument("--height", type=int, default=704)
+parser.add_argument("--width", type=int, default=1248)
+parser.add_argument("--num_frames", type=int, default=81)
 args = parser.parse_args()
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
@@ -36,14 +39,14 @@ pipe = WanVideoPipeline.from_pretrained(
 )
 
 # Image-to-video
-input_image = Image.open(args.input_image).convert('RGB').resize((1248, 704))
+input_image = Image.open(args.input_image).convert('RGB').resize((args.width, args.height))
 video = pipe(
     prompt="A young girl from the input image starts walking forward naturally. Her body shows smooth, realistic walking motion with coordinated arm swings and leg strides. The character identity, clothing, hairstyle, and facial features remain exactly the same as the input image. Static camera perspective, no zoom or pan.",
     negative_prompt="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting",
     seed=0, tiled=True,
-    height=704, width=1248,
+    height=args.height, width=args.width,
     input_image=input_image,
-    num_frames=121,
+    num_frames=args.num_frames,
     # num_inference_steps=100
 )
 save_video(video, f"video_2_Wan2.2-TI2V-5B_{os.path.basename(args.input_image).split('.')[0]}.mp4", fps=15, quality=5)
