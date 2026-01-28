@@ -79,7 +79,7 @@ def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
 
     device = j2d.device
     dtype  = j2d.dtype
-    F, J, _ = j2d.shape
+    T, J, _ = j2d.shape
 
     # Intrinsics and inverse
     K = torch.tensor(
@@ -118,7 +118,7 @@ def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
     rays_cam = torch.einsum("ab,fjb->fja", K_inv, pixel_h)
 
     # Homogeneous (F,J,4)
-    ones = torch.ones((F, J, 1), device=device, dtype=dtype)
+    ones = torch.ones((T, J, 1), device=device, dtype=dtype)
     rays_cam_h = torch.cat([rays_cam, ones], dim=-1)
 
     # Camera -> world (F,J,4)
