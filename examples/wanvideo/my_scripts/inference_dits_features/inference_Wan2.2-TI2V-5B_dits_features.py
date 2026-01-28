@@ -7,6 +7,8 @@ from diffsynth.utils.data import save_video
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionUpsample
 from modelscope import dataset_snapshot_download
+import re
+
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # # CPU Offload
@@ -26,10 +28,28 @@ def wan_parser():
     parser = argparse.ArgumentParser(description="WanVideo Inference with DITS Features")
     parser.add_argument("--extra_modules_ckpt", type=str, required=True, help="Name to use when saving checkpoints.")
     parser.add_argument("--split_gpu", default=False, action="store_true", help="Use another gpu for inference the extra modules.")
+    parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-TI2V-5B", help="Model id to use for the WanVideoPipeline.")
+    parser.add_argument("--input_image", type=str, default="data/examples/wan/cat_fightning.jpg")
+    parser.add_argument("--height", type=int, default=704)
+    parser.add_argument("--width", type=int, default=1248)
+    parser.add_argument("--num_frames", type=int, default=121)
+    parser.add_argument("--prompt", type=str, default="The girl in the input image walks straight forward naturally, with smooth and realistic walking motion. Her identity, clothing, hairstyle, and facial features remain unchanged. The camera is static, with no zoom, pan, or perspective change.")
+    parser.add_argument("--negative_prompt", type=str, default="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting")
+    parser.add_argument("--save_suffix", type=str, default=None)
     return parser
 
 parser = wan_parser()
 args = parser.parse_args()
+
+# extract "Wan2.1" or "Wan2.2" from the model id
+pattern = r'Wan2\.\d'\.\d'
+match = re.search(pattern, args.model_id)
+if match:
+    model_version = match.group(0)
+    print(f"Extracted model version: {model_version}")
+else:
+    raise ValueError("Model ID does not contain a valid Wan model version.")
+
 
 pipe = WanVideoPipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
@@ -40,11 +60,11 @@ pipe = WanVideoPipeline.from_pretrained(
     #     ModelConfig(model_id="Wan-AI/Wan2.2-TI2V-5B", origin_file_pattern="Wan2.2_VAE.pth", **vram_config),
     # ],
     model_configs=[
-        ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
-        ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
-        ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="Wan2.1_VAE.pth", **vram_config),
+        ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
+        ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
+        ModelConfig(model_id=args.model_id, origin_file_pattern=f"{model_version}_VAE.pth", **vram_config),
     ],
-    tokenizer_config=ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/"),
+    tokenizer_config=ModelConfig(model_id=args.model_id, origin_file_pattern="google/umt5-xxl/"),
     redirect_common_files=False,
     vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 0.5,
     return_features=True
@@ -58,7 +78,8 @@ video, return_dict = pipe(
     height=704//2, width=1248//2,
     num_frames=81,
 )
-save_video(video, "video_1_Wan2.1-T2V-1.3B.mp4", fps=15, quality=5)
+save_video(video, "dummy.mp4", fps=15, quality=5)
+exit()
 
 class DummyExtraModules(torch.nn.Module):
     def __init__(self, device):

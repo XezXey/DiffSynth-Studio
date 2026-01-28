@@ -126,7 +126,6 @@ class WanTrainingModule(DiffusionTrainingModule):
             "dit_features:data_process": lambda pipe, *args: args,
         }
 
-
     def parse_extra_inputs(self, data, extra_inputs, inputs_shared):
         for extra_input in extra_inputs:
             if extra_input == "input_image":
