@@ -5,7 +5,7 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * len(pipe.scheduler.timesteps))
     # min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))
 
-    print(inputs)
+    print(inputs['preferred_timestep_id'])
     preferred_timestep_id = inputs.get("preferred_timestep_id", [-1])
     print(preferred_timestep_id)
     timestep_id = torch.tensor(preferred_timestep_id, dtype=torch.int)
