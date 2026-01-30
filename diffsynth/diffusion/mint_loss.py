@@ -9,8 +9,8 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     timestep_id = torch.tensor(preferred_timestep_id, dtype=torch.int)
 
     timestep = pipe.scheduler.timesteps[timestep_id].to(dtype=pipe.torch_dtype, device=pipe.device)
-    # print(timestep)
-    # print(pipe.scheduler.timesteps)
+    print(pipe.scheduler.timesteps)
+    print(timestep)
     # exit()
     
     noise = torch.randn_like(inputs["input_latents"])
