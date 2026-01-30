@@ -155,7 +155,12 @@ motion_pred_2d = torch.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze
 motion_pred_3d = unproject_torch(fx, fy, cx, cy, E_bl, torch.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
 motion_pred_3d = motion_pred_3d.cpu().numpy()
 
+output = {
+    "motion_pred_3d": motion_pred_3d,
+    "motion_pred_2d": motion_pred_2d.cpu().numpy(),
+}
+
 if args.save_suffix is None:
-    np.save(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}.npy"), motion_pred_3d)
+    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}.npz"), output)
 else:
-    np.save(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}_{args.save_suffix}.npy"), motion_pred_3d)
+    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}_{args.save_suffix}.npz"), output)

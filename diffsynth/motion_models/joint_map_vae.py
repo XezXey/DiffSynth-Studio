@@ -289,8 +289,6 @@ class JointHeatMapMotionUpsample(th.nn.Module):
         joint_map_pred = rearrange(joint_map_pred, '(b t) c h w -> b c t h w', t=t)
         pixel_coords, depth = self.map_to_joint(joint_map_pred)
         return pixel_coords, depth
-
-
     
     def map_to_joint(self, joint_map):
         """
