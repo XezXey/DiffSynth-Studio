@@ -1,2 +1,3 @@
 from .unified_dataset import UnifiedDataset
 from .unified_motion_dataset import UnifiedMotionDataset
+from .simplified_motion_dataset import SimplifiedMotionDataset

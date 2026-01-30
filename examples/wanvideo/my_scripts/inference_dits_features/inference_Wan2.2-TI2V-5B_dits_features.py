@@ -40,6 +40,8 @@ def wan_parser():
     parser.add_argument("--num_inference_steps", type=int, default=50)
     parser.add_argument("--save_path", type=str, default="./results/")
     parser.add_argument("--cfg_scale", type=float, default=5.0)
+    parser.add_argument("--denoising_strength", type=float, default=1.0)
+    parser.add_argument("--sigma_shift", type=int, default=5.0)
     parser.add_argument("--save_suffix", type=str, default=None)
     return parser
 

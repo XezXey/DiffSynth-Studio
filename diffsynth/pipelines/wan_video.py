@@ -178,7 +178,6 @@ class WanVideoPipeline(BasePipeline):
         pipe.vram_management_enabled = pipe.check_vram_management_state()
         return pipe
 
-
     @torch.no_grad()
     def __call__(
         self,
@@ -360,6 +359,185 @@ class WanVideoPipeline(BasePipeline):
             return video
 
 
+    @torch.no_grad()
+    def inference_on_video(
+        self,
+        # Prompt
+        prompt: str,
+        negative_prompt: Optional[str] = "",
+        # Image-to-video
+        input_image: Optional[Image.Image] = None,
+        # First-last-frame-to-video
+        end_image: Optional[Image.Image] = None,
+        # Video-to-video
+        input_video: Optional[list[Image.Image]] = None,
+        denoising_strength: Optional[float] = 1.0,
+        # Speech-to-video
+        input_audio: Optional[np.array] = None,
+        audio_embeds: Optional[torch.Tensor] = None,
+        audio_sample_rate: Optional[int] = 16000,
+        s2v_pose_video: Optional[list[Image.Image]] = None,
+        s2v_pose_latents: Optional[torch.Tensor] = None,
+        motion_video: Optional[list[Image.Image]] = None,
+        # ControlNet
+        control_video: Optional[list[Image.Image]] = None,
+        reference_image: Optional[Image.Image] = None,
+        # Camera control
+        camera_control_direction: Optional[Literal["Left", "Right", "Up", "Down", "LeftUp", "LeftDown", "RightUp", "RightDown"]] = None,
+        camera_control_speed: Optional[float] = 1/54,
+        camera_control_origin: Optional[tuple] = (0, 0.532139961, 0.946026558, 0.5, 0.5, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0),
+        # VACE
+        vace_video: Optional[list[Image.Image]] = None,
+        vace_video_mask: Optional[Image.Image] = None,
+        vace_reference_image: Optional[Image.Image] = None,
+        vace_scale: Optional[float] = 1.0,
+        # Animate
+        animate_pose_video: Optional[list[Image.Image]] = None,
+        animate_face_video: Optional[list[Image.Image]] = None,
+        animate_inpaint_video: Optional[list[Image.Image]] = None,
+        animate_mask_video: Optional[list[Image.Image]] = None,
+        # VAP
+        vap_video: Optional[list[Image.Image]] = None,
+        vap_prompt: Optional[str] = " ",
+        negative_vap_prompt: Optional[str] = " ",
+        # Randomness
+        seed: Optional[int] = None,
+        rand_device: Optional[str] = "cpu",
+        # Shape
+        height: Optional[int] = 480,
+        width: Optional[int] = 832,
+        num_frames=81,
+        # Classifier-free guidance
+        cfg_scale: Optional[float] = 5.0,
+        cfg_merge: Optional[bool] = False,
+        # Boundary
+        switch_DiT_boundary: Optional[float] = 0.875,
+        # Scheduler
+        num_inference_steps: Optional[int] = 50,
+        sigma_shift: Optional[float] = 5.0,
+        # Speed control
+        motion_bucket_id: Optional[int] = None,
+        # LongCat-Video
+        longcat_video: Optional[list[Image.Image]] = None,
+        # VAE tiling
+        tiled: Optional[bool] = True,
+        tile_size: Optional[tuple[int, int]] = (30, 52),
+        tile_stride: Optional[tuple[int, int]] = (15, 26),
+        # Sliding window
+        sliding_window_size: Optional[int] = None,
+        sliding_window_stride: Optional[int] = None,
+        # Teacache
+        tea_cache_l1_thresh: Optional[float] = None,
+        tea_cache_model_id: Optional[str] = "",
+        # progress_bar
+        progress_bar_cmd=tqdm,
+        #NOTE: Dit features selection
+        preferred_timestep_id: Optional[list[int]] = [-1],
+        preferred_dit_block_id: Optional[list[int]] = [-1],
+        return_features: Optional[bool] = False,
+    ):
+        # Scheduler
+        self.scheduler.set_timesteps(num_inference_steps, denoising_strength=denoising_strength, shift=sigma_shift)
+        
+        # Inputs
+        inputs_posi = {
+            "prompt": prompt,
+            "vap_prompt": vap_prompt,
+            "tea_cache_l1_thresh": tea_cache_l1_thresh, "tea_cache_model_id": tea_cache_model_id, "num_inference_steps": num_inference_steps,
+        }
+        inputs_nega = {
+            "negative_prompt": negative_prompt,
+            "negative_vap_prompt": negative_vap_prompt,
+            "tea_cache_l1_thresh": tea_cache_l1_thresh, "tea_cache_model_id": tea_cache_model_id, "num_inference_steps": num_inference_steps,
+        }
+        inputs_shared = {
+            "input_image": input_image,
+            "end_image": end_image,
+            "input_video": input_video, "denoising_strength": denoising_strength,
+            "control_video": control_video, "reference_image": reference_image,
+            "camera_control_direction": camera_control_direction, "camera_control_speed": camera_control_speed, "camera_control_origin": camera_control_origin,
+            "vace_video": vace_video, "vace_video_mask": vace_video_mask, "vace_reference_image": vace_reference_image, "vace_scale": vace_scale,
+            "seed": seed, "rand_device": rand_device,
+            "height": height, "width": width, "num_frames": num_frames,
+            "cfg_scale": cfg_scale, "cfg_merge": cfg_merge,
+            "sigma_shift": sigma_shift,
+            "motion_bucket_id": motion_bucket_id,
+            "longcat_video": longcat_video,
+            "tiled": tiled, "tile_size": tile_size, "tile_stride": tile_stride,
+            "sliding_window_size": sliding_window_size, "sliding_window_stride": sliding_window_stride,
+            "input_audio": input_audio, "audio_sample_rate": audio_sample_rate, "s2v_pose_video": s2v_pose_video, "audio_embeds": audio_embeds, "s2v_pose_latents": s2v_pose_latents, "motion_video": motion_video,
+            "animate_pose_video": animate_pose_video, "animate_face_video": animate_face_video, "animate_inpaint_video": animate_inpaint_video, "animate_mask_video": animate_mask_video,
+            "vap_video": vap_video, 
+            "preferred_timestep_id": preferred_timestep_id,
+            "preferred_dit_block_id": preferred_dit_block_id,
+        }
+        for unit in self.units:
+            inputs_shared, inputs_posi, inputs_nega = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
+
+        # Denoise
+        self.load_models_to_device(self.in_iteration_models)
+        models = {name: getattr(self, name) for name in self.in_iteration_models}
+        if -1 in preferred_timestep_id:
+            preferred_timestep_id[preferred_timestep_id.index(-1)] = len(self.scheduler.timesteps) - 1
+        print(self.scheduler.timesteps)
+        print(preferred_timestep_id)
+
+        
+        to_return_dict = None
+        for progress_id, timestep in enumerate(progress_bar_cmd(self.scheduler.timesteps)):
+            # Switch DiT if necessary
+            if timestep.item() < switch_DiT_boundary * 1000 and self.dit2 is not None and not models["dit"] is self.dit2:
+                self.load_models_to_device(self.in_iteration_models_2)
+                models["dit"] = self.dit2
+                models["vace"] = self.vace2
+                
+            # Timestep
+            timestep = timestep.unsqueeze(0).to(dtype=self.torch_dtype, device=self.device)
+            
+            # Inference
+            if return_features:
+                noise_pred_posi, return_dict_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
+            else:
+                noise_pred_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
+            if cfg_scale != 1.0:
+                if cfg_merge:
+                    noise_pred_posi, noise_pred_nega = noise_pred_posi.chunk(2, dim=0)
+                else:
+                    if return_features:
+                        noise_pred_nega, return_dict_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
+                    else:
+                        noise_pred_nega = self.model_fn(**models, **inputs_shared, **inputs_nega, timestep=timestep)
+                noise_pred = noise_pred_nega + cfg_scale * (noise_pred_posi - noise_pred_nega)
+            else:
+                noise_pred = noise_pred_posi
+
+            # Scheduler
+            inputs_shared["latents"] = self.scheduler.step(noise_pred, self.scheduler.timesteps[progress_id], inputs_shared["latents"])
+            if "first_frame_latents" in inputs_shared:
+                inputs_shared["latents"][:, :, 0:1] = inputs_shared["first_frame_latents"]
+            
+            if progress_id in preferred_timestep_id and return_features:
+                print("[#] Getting DIT features at timestep ", self.scheduler.timesteps[progress_id].item())
+                dit_features = return_dict_posi.get("dit_features", None)
+                grid_size = return_dict_posi.get("grid_size", None)
+                assert dit_features is not None, "Dit features not returned from model_fn."
+                assert grid_size is not None, "Grid size not returned from model_fn."
+                to_return_dict = return_dict_posi
+            else:
+                to_return_dict = None
+        
+        for unit in self.post_units:
+            inputs_shared, _, _ = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
+        # Decode
+        self.load_models_to_device(['vae'])
+        video = self.vae.decode(inputs_shared["latents"], device=self.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)
+        video = self.vae_output_to_video(video)
+        self.load_models_to_device([])
+
+        if to_return_dict is not None:
+            return video, to_return_dict
+        else:
+            return video
 
 class WanVideoUnit_ShapeChecker(PipelineUnit):
     def __init__(self):
@@ -424,7 +602,8 @@ class WanVideoUnit_InputVideoEmbedder(PipelineUnit):
             return {"latents": noise, "input_latents": input_latents}
         else:
             latents = pipe.scheduler.add_noise(input_latents, noise, timestep=pipe.scheduler.timesteps[0])
-            return {"latents": latents}
+            #NOTE: Add input_latents to return dict for later use
+            return {"latents": latents, "vae_latents": input_latents}
 
 
 
