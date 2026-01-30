@@ -29,10 +29,6 @@ def launch_training_task(
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
     
-    print("[#] Training on preferred timesteps and DIT blocks:")
-    print(f"Preferred timestep IDs: {model.preferred_timestep_id} => timesteps {[model.pipe.scheduler.timesteps[i].item() for i in model.preferred_timestep_id]}")
-    print(f"Preferred DIT block IDs: {model.preferred_dit_block_id}")
-    
     model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
     
     for epoch_id in range(num_epochs):
@@ -124,9 +120,13 @@ def launch_training_task_add_modules(
         save_steps = args.save_steps
         vis_steps = args.vis_steps
         num_epochs = args.num_epochs
-    print("Training with additional modules...")
+    print("[#] Training with additional modules...")
     print("Save steps: ", save_steps)
     print("Visualization steps: ", vis_steps)
+    print("[#] Training on preferred timesteps and DIT blocks:")
+    print(f"Preferred timestep IDs: {model.preferred_timestep_id} => timesteps {[model.pipe.scheduler.timesteps[i].item() for i in model.preferred_timestep_id]}")
+    print(f"Preferred DIT block IDs: {model.preferred_dit_block_id}")
+    
     
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
