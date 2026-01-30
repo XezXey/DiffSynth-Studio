@@ -125,7 +125,7 @@ def launch_training_task_add_modules(
     print("Visualization steps: ", vis_steps)
     print("[#] Training on preferred timesteps and DIT blocks:")
     print(f"Preferred timestep IDs: {model.preferred_timestep_id} => timesteps {[model.pipe.scheduler.timesteps[i].item() for i in model.preferred_timestep_id]}")
-    print(f"Preferred DIT block IDs: {model.preferred_dit_block_id} => dit's block {list(range(model.pipe.dit.blocks))[model.preferred_dit_block_id]}")
+    print(f"Preferred DIT block IDs: {model.preferred_dit_block_id} => dit's block {list(range(len(model.pipe.dit.blocks)))[model.preferred_dit_block_id]}")
     
     
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
