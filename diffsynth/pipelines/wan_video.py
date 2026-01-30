@@ -299,6 +299,8 @@ class WanVideoPipeline(BasePipeline):
         models = {name: getattr(self, name) for name in self.in_iteration_models}
         if -1 in preferred_timestep_id:
             preferred_timestep_id[preferred_timestep_id.index(-1)] = len(self.scheduler.timesteps) - 1
+        print(self.scheduler.timesteps)
+        print(preferred_timestep_id)
 
         
         to_return_dict = None
@@ -335,6 +337,7 @@ class WanVideoPipeline(BasePipeline):
                 inputs_shared["latents"][:, :, 0:1] = inputs_shared["first_frame_latents"]
             
             if progress_id in preferred_timestep_id and return_features:
+                print("[#] Getting DIT features at timestep ", self.scheduler.timesteps[progress_id].item())
                 dit_features = return_dict_posi.get("dit_features", None)
                 grid_size = return_dict_posi.get("grid_size", None)
                 assert dit_features is not None, "Dit features not returned from model_fn."

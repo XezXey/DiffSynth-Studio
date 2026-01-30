@@ -35,6 +35,8 @@ def wan_parser():
     parser.add_argument("--max_timestep_boundary", type=float, default=1.0, help="Max timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--min_timestep_boundary", type=float, default=0.0, help="Min timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
+    parser.add_argument("--preferred_timestep_id", type=int, nargs='+', default=[-1], help="Preferred timestep IDs for training on DIT features. Use -1 to indicate the last timestep.")
+    parser.add_argument("--preferred_dit_block_id", type=int, nargs='+', default=[-1], help="Preferred DIT block IDs for training on DIT features. Use -1 to indicate the last DIT block.")
     #NOTE: Extra parameters for training additional modules
     parser.add_argument("--save_name", type=str, default=None, help="Name to use when saving checkpoints.")
     parser.add_argument("--use_wandb", default=False, action="store_true", help="Whether to use wandb for logging.")
@@ -84,6 +86,9 @@ class WanTrainingModule(DiffusionTrainingModule):
 
         self.preferred_timestep_id = preferred_timestep_id
         self.preferred_dit_block_id = preferred_dit_block_id
+        print("[#] Training on preferred timesteps and DIT blocks:")
+        print(f"Preferred timestep IDs: {self.preferred_timestep_id} => timesteps {[self.pipe.scheduler.timesteps[i].item() for i in self.preferred_timestep_id]}")
+        print(f"Preferred DIT block IDs: {self.preferred_dit_block_id}")
 
         # Use Wan models as frozen models
         self.force_no_grad()

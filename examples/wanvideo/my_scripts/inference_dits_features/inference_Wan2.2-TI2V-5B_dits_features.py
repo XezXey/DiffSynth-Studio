@@ -39,6 +39,7 @@ def wan_parser():
     parser.add_argument("--negative_prompt", type=str, default="zoom, dolly, pan, tilt, camera movement, camera shake, perspective change, focal length change, background motion, parallax, cinematic camera, dynamic camera, motion blur, jitter, identity change, face distortion, body deformation, clothing change, inconsistent lighting")
     parser.add_argument("--num_inference_steps", type=int, default=50)
     parser.add_argument("--save_path", type=str, default="./results/")
+    parser.add_argument("--cfg_scale", type=float, default=5.0)
     parser.add_argument("--save_suffix", type=str, default=None)
     return parser
 
@@ -83,7 +84,8 @@ video, return_dict = pipe(
     input_image=input_image,
     num_frames=args.num_frames,
     return_features=True,
-    num_inference_steps=args.num_inference_steps
+    num_inference_steps=args.num_inference_steps,
+    cfg_scale=args.cfg_scale
 )
 
 os.makedirs(args.save_path, exist_ok=True)
@@ -161,6 +163,6 @@ output = {
 }
 
 if args.save_suffix is None:
-    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}.npz"), output)
+    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}.npz"), **output)
 else:
-    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}_{args.save_suffix}.npz"), output)
+    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_image).split('.')[0]}_{args.save_suffix}.npz"), **output)
