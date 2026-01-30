@@ -86,9 +86,6 @@ class WanTrainingModule(DiffusionTrainingModule):
 
         self.preferred_timestep_id = preferred_timestep_id
         self.preferred_dit_block_id = preferred_dit_block_id
-        print("[#] Training on preferred timesteps and DIT blocks:")
-        print(f"Preferred timestep IDs: {self.preferred_timestep_id} => timesteps {[self.pipe.scheduler.timesteps[i].item() for i in self.preferred_timestep_id]}")
-        print(f"Preferred DIT block IDs: {self.preferred_dit_block_id}")
 
         # Use Wan models as frozen models
         self.force_no_grad()
