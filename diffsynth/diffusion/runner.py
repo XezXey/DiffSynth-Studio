@@ -138,7 +138,8 @@ def launch_training_task_add_modules(
         for data in tqdm(dataloader):
             with accelerator.accumulate(model):
                 optimizer.zero_grad()
-                print(data.keys())
+                for i in range(len(data)):
+                    print(data[i].keys())
                 exit()
                 if dataset.load_from_cache:
                     loss, pred_dict = model({}, inputs=data)
