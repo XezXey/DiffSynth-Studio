@@ -1390,7 +1390,7 @@ def model_fn_wan_video_return_features(
                     x = block(x, context, t_mod, freqs)
             
             if block_id in preferred_dit_block_id:
-                print("Return dit feature at block:", block_id)
+                # print("Return dit feature at block:", block_id)
                 dit_features.append(x)
             
             # VACE
