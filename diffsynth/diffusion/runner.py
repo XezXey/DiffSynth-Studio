@@ -127,7 +127,6 @@ def launch_training_task_add_modules(
     print(f"Preferred timestep IDs: {model.preferred_timestep_id} => timesteps {[model.pipe.scheduler.timesteps[i].item() for i in model.preferred_timestep_id]}")
     print(f"Preferred DIT block IDs: {model.preferred_dit_block_id} => dit's block {[list(range(len(model.pipe.dit.blocks)))[i] for i in model.preferred_dit_block_id]}")
     
-    
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
@@ -138,10 +137,10 @@ def launch_training_task_add_modules(
         for data in tqdm(dataloader):
             with accelerator.accumulate(model):
                 optimizer.zero_grad()
-                for i in range(len(data)):
-                    print(data[i].keys())
-                exit()
                 if dataset.load_from_cache:
+                    #NOTE: Revoke this, so the data_process hyperparams won't affect the training process
+                    data[0]['preferred_timestep_id'] = model.preferred_timestep_id
+                    data[0]['preferred_dit_block_id'] = model.preferred_dit_block_id
                     loss, pred_dict = model({}, inputs=data)
                 else:
                     loss, pred_dict = model(data)
