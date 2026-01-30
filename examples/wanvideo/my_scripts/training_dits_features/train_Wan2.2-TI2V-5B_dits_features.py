@@ -265,6 +265,8 @@ if __name__ == "__main__":
         task=args.task,
         max_timestep_boundary=args.max_timestep_boundary,
         min_timestep_boundary=args.min_timestep_boundary,
+        preferred_dit_block_id=args.preferred_dit_block_id,
+        preferred_timestep_id=args.preferred_timestep_id,
     )
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
     if args.use_wandb:
