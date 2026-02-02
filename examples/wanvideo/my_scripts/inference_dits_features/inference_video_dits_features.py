@@ -266,7 +266,6 @@ class DummyExtraModules(torch.nn.Module):
             n_joints=65,
             dit_dim=pipe.dit.dim,
             head_out_dim=pipe.dit.out_dim,
-            flatten_dim=256, #TODO: Fix this!!!
             vae_latent_dim=pipe.vae.z_dim,
             patch_size=pipe.dit.patch_size,
             device=device
@@ -310,7 +309,8 @@ fx, fy, cx, cy = motion_data["cams_intr"]
 org_h = cy * 2.0 + 1
 org_w = cx * 2.0 + 1
 E_bl = torch.tensor(motion_data["cams_extr"]).to(device=pipe.device)
-E_bl = E_bl[:args.num_frames, ...]
+T = pixel_coords.shape[2]
+E_bl = E_bl[:T, ...]
 
 u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
 v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T

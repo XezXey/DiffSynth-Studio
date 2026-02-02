@@ -201,7 +201,7 @@ class JointHeatMapMotionVAEDecoder(th.nn.Module):
         return final_joint_map
     
 class JointHeatMapMotionUpsample(th.nn.Module):
-    def __init__(self, n_joints, dit_dim, head_out_dim, flatten_dim, vae_latent_dim, patch_size, device, upsample_dim=96, out_channels=2, num_heads=12):
+    def __init__(self, n_joints, dit_dim, head_out_dim, vae_latent_dim, patch_size, device, upsample_dim=96, out_channels=2, num_heads=12):
         super().__init__()
         self.J = n_joints
         self.dit_dim = dit_dim
@@ -209,8 +209,6 @@ class JointHeatMapMotionUpsample(th.nn.Module):
         self.out_joint_map_channels = out_channels
         self.num_heads = num_heads
         self.patch_size = patch_size
-        #TODO: Figure out the flatten dim calculation from flattened dit features
-        self.flatten_dim = flatten_dim
         self.upsampling_factor = 8  #NOTE: Default from WanVideoVAE
         
         self.self_attn = SelfAttention(dim=dit_dim, num_heads=num_heads).to(device)

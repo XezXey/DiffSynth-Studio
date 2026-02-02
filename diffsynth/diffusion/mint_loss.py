@@ -6,7 +6,7 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))
 
     # print(inputs['preferred_timestep_id'])
-    preferred_timestep_id = inputs.get("preferred_timestep_id", [-1])
+    preferred_timestep_id = inputs["preferred_timestep_id"]
     # print(preferred_timestep_id)
     timestep_id = torch.tensor(preferred_timestep_id, dtype=torch.int)
 
@@ -20,7 +20,8 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # training_target = pipe.scheduler.training_target(inputs["input_latents"], noise, timestep)
 
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
-    noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
+    with torch.no_grad():   #NOTE: No grad for original prediction (DiTs's part)
+        noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
 
     dit_features = return_dict.get("dit_features", None)
     grid_size = return_dict.get("grid_size", None)
@@ -71,16 +72,16 @@ def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
     """
     Args:
         fx, fy, cx, cy: scalars (python float or torch scalar)
-        E_bl: (F, 4, 4) world -> Blender camera extrinsics (torch.Tensor)
-        j2d:  (F, J, 3) where last dim is (u, v, depth) (torch.Tensor)
+        E_bl: (T, 4, 4) world -> Blender camera extrinsics (torch.Tensor)
+        j2d:  (T, J, 3) where last dim is (u, v, depth) (torch.Tensor)
               IMPORTANT: depth must be consistent with your projection convention
         eps: small constant for numeric safety
 
     Returns:
-        j3d_unproj: (F, J, 3) unprojected 3D points in world coordinates
+        j3d_unproj: (T, J, 3) unprojected 3D points in world coordinates
     """
-    assert E_bl.ndim == 3 and E_bl.shape[-2:] == (4, 4), f"E_bl must be (F,4,4), got {E_bl.shape}"
-    assert j2d.ndim == 3 and j2d.shape[-1] == 3, f"j2d must be (F,J,3), got {j2d.shape}"
+    assert E_bl.ndim == 3 and E_bl.shape[-2:] == (4, 4), f"E_bl must be (T,4,4), got {E_bl.shape}"
+    assert j2d.ndim == 3 and j2d.shape[-1] == 3, f"j2d must be (T,J,3), got {j2d.shape}"
 
     device = j2d.device
     dtype  = j2d.dtype
