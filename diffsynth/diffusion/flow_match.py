@@ -162,6 +162,10 @@ class FlowMatchScheduler():
         return model_output
     
     def add_noise(self, original_samples, noise, timestep):
+        #NOTE: self.timesteps is T -> 0 (e.g., 1000 to 4.9801)
+        # so larger timestep means noisier sample
+        #NOTE: self.sigmas is is 1 -> 0 (e.g., 1.0 to 0.005)
+        # so larger sigma means noisier sample
         if isinstance(timestep, torch.Tensor):
             timestep = timestep.cpu()
         timestep_id = torch.argmin((self.timesteps - timestep).abs())
@@ -174,6 +178,7 @@ class FlowMatchScheduler():
         return target
     
     def training_weight(self, timestep):
+        #NOTE: Timesteps's weights for how much we penalize the loss at each timestep during training
         timestep_id = torch.argmin((self.timesteps - timestep.to(self.timesteps.device)).abs())
         weights = self.linear_timesteps_weights[timestep_id]
         return weights

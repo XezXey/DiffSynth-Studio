@@ -98,8 +98,6 @@ class WanTrainingModule(DiffusionTrainingModule):
                 n_joints=65,    #TODO: Fix this!!!
                 dit_dim=self.pipe.dit.dim,
                 head_out_dim=self.pipe.dit.out_dim,
-                # flatten_dim=256, #TODO: Fix this!!!
-                flatten_dim=384, #TODO: Fix this!!!
                 vae_latent_dim=vae_latent_dim,
                 patch_size=self.pipe.dit.patch_size,
                 device=self.pipe.device
@@ -262,7 +260,7 @@ if __name__ == "__main__":
             # Track hyperparameters and run metadata.
             config={
                 # Model info
-                "model_id": "Wan-AI/Wan2.1-T2V-1.3B",
+                "model_id": args.model_id_with_origin_paths.split(":")[0],
                 "model_id_with_origin_paths": args.model_id_with_origin_paths,
                 # Training info
                 "learning_rate": args.learning_rate,
