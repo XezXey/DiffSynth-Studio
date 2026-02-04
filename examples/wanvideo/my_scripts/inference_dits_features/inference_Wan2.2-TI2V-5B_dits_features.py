@@ -14,16 +14,16 @@ import re
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # # CPU Offload
-vram_config = {
-    "offload_dtype": torch.float8_e4m3fn,
-    "offload_device": "cpu",
-    "onload_dtype": torch.float8_e4m3fn,
-    "onload_device": "cpu",
-    "preparing_dtype": torch.float8_e4m3fn,
-    "preparing_device": "cuda",
-    "computation_dtype": torch.bfloat16,
-    "computation_device": "cuda",
-}
+# vram_config = {
+#     "offload_dtype": torch.float8_e4m3fn,
+#     "offload_device": "cpu",
+#     "onload_dtype": torch.float8_e4m3fn,
+#     "onload_device": "cpu",
+#     "preparing_dtype": torch.float8_e4m3fn,
+#     "preparing_device": "cuda",
+#     "computation_dtype": torch.bfloat16,
+#     "computation_device": "cuda",
+# }
 
 def wan_parser():
     #NOTE: Extra parameters for training additional modules

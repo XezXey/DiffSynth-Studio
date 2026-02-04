@@ -7,17 +7,17 @@ from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionUpsample
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
 from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
-def seed_everything(seed: int):
-    import random
-    import numpy as np
-    import torch
+# def seed_everything(seed: int):
+#     import random
+#     import numpy as np
+#     import torch
 
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+#     random.seed(seed)
+#     np.random.seed(seed)
+#     torch.manual_seed(seed)
+#     torch.cuda.manual_seed_all(seed)
 
-seed_everything(47)
+# seed_everything(47)
 
 
 import wandb

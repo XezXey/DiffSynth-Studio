@@ -13,10 +13,21 @@ from diffsynth.core.data.simplified_motion_dataset import SimplifiedMotionDatase
 from diffsynth.diffusion.mint_loss import unproject_torch
 from modelscope import dataset_snapshot_download
 import re
+def seed_everything(seed: int):
+    import random
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+seed_everything(47)
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# # CPU Offload
+# CPU Offload
 vram_config = {
     "offload_dtype": torch.float8_e4m3fn,
     "offload_device": "cpu",
@@ -181,20 +192,25 @@ class WanInferenceModule(torch.nn.Module):
         }
         return inputs_shared, inputs_posi, inputs_nega
     
-    def forward(self, data, inputs=None):
+    def forward(self, data, inputs=None, apply_units=True):
         if inputs is None: inputs = self.get_pipeline_inputs(data)
         inputs = self.transfer_data_to_device(inputs, self.pipe.device, self.pipe.torch_dtype)
-        for unit in self.pipe.units:
-            inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
-            
+
+        if apply_units:
+            for unit in self.pipe.units:
+                inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
+        
+    
         inputs_shared, inputs_posi, inputs_nega = inputs
         inputs = {**inputs_shared, **inputs_posi, **inputs_nega}
         preferred_timestep_id = inputs.get("preferred_timestep_id", [-1])
         timestep_id = torch.tensor(preferred_timestep_id, dtype=torch.int)
         timestep = pipe.scheduler.timesteps[timestep_id].to(dtype=pipe.torch_dtype, device=pipe.device)
         print(f"[#] Getting DIT features at timestep: ", timestep.item())
-        noise = torch.randn_like(inputs["vae_latents"])
-        inputs["latents"] = pipe.scheduler.add_noise(inputs["vae_latents"], noise, timestep)
+
+        key_to_use = "vae_latents" if "vae_latents" in inputs else "input_latents"
+        noise = torch.randn_like(inputs[key_to_use])
+        inputs["latents"] = pipe.scheduler.add_noise(inputs[key_to_use], noise, timestep)
         models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
         noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
 
@@ -205,14 +221,26 @@ class WanInferenceModule(torch.nn.Module):
         
         return noise_pred, return_dict
 
+model_configs = [
+    ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
+    # ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors"),
+    # ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
+    # ModelConfig(model_id=args.model_id, origin_file_pattern=f"{model_version}_VAE.pth", **vram_config),
+
+]
+if args.input_video is not None:
+    print("Using input video for inference (Load VAE and Text Encoder).")
+    model_configs.extend([
+        # ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth"),
+        ModelConfig(model_id=args.model_id, origin_file_pattern=f"{model_version}_VAE.pth"),
+        ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
+        # ModelConfig(model_id=args.model_id, origin_file_pattern=f"{model_version}_VAE.pth", **vram_config),
+    ])
+
 pipe = WanVideoPipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
     device="cuda",
-    model_configs=[
-        ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
-        ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
-        ModelConfig(model_id=args.model_id, origin_file_pattern=f"{model_version}_VAE.pth", **vram_config),
-    ],
+    model_configs=model_configs,
     tokenizer_config=ModelConfig(model_id=args.model_id, origin_file_pattern="google/umt5-xxl/"),
     redirect_common_files=False,
     vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 0.5,
@@ -233,40 +261,30 @@ inference_module = WanInferenceModule(
 )
 
 data = next(iter(dataset))
-data['prompt'] = args.prompt
-noise_pred, return_dict = inference_module(data)
-
-# video, return_dict = pipe.inference_on_video(
-#     prompt=args.prompt,
-#     negative_prompt=args.negative_prompt,
-#     seed=0, tiled=True,
-#     height=args.height, width=args.width,
-#     input_image=input_image,
-#     num_frames=args.num_frames,
-#     return_features=True,
-#     num_inference_steps=args.num_inference_steps,
-#     cfg_scale=args.cfg_scale
-# )
+if args.input_video is not None:
+    print("Inference with input video.")
+    data['prompt'] = args.prompt
+    noise_pred, return_dict = inference_module(data)
+else:
+    print("Inference with processed data (from dit_features:data_process)")
+    noise_pred, return_dict = inference_module(data=[], inputs=data, apply_units=False)
 
 # Copy the video to save_path
 os.makedirs(args.save_path, exist_ok=True)
-import shutil
-shutil.copy(args.input_video, args.save_path)
-
-# if args.save_suffix is None:
-#     save_name = os.path.join(args.save_path, f"video_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_video).split('.')[0]}.mp4")
-# else:
-#     save_name = os.path.join(args.save_path, f"video_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_video).split('.')[0]}_{args.save_suffix}.mp4")
+if args.input_video is not None:
+    import shutil
+    shutil.copy(args.input_video, args.save_path)
     
 class DummyExtraModules(torch.nn.Module):
     def __init__(self, device):
         super().__init__()
+        vae_latent_dim = pipe.vae.z_dim if hasattr(pipe.vae, 'z_dim') else pipe.dit.out_dim
         self.extra_modules = JointHeatMapMotionUpsample(
             # n_joints=23,
             n_joints=65,
             dit_dim=pipe.dit.dim,
             head_out_dim=pipe.dit.out_dim,
-            vae_latent_dim=pipe.vae.z_dim,
+            vae_latent_dim=vae_latent_dim,
             patch_size=pipe.dit.patch_size,
             device=device
         )
@@ -325,6 +343,6 @@ output = {
 }
 
 if args.save_suffix is None:
-    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_video).split('.')[0]}.npz"), **output)
+    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}.npz"), **output)
 else:
-    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{os.path.basename(args.input_video).split('.')[0]}_{args.save_suffix}.npz"), **output)
+    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{args.save_suffix}.npz"), **output)
