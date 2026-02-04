@@ -62,7 +62,7 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     loss_3d = torch.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
     loss_2d = torch.nn.functional.mse_loss(motion_pred_2d.float(), gt_motion_2d.float()) * mask_2d.float()
     loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
-    loss = loss_3d + loss_2d
+    loss = loss_3d + loss_2d * 10.0
     
     inputs.update({"motion_pred": motion_pred_3d, "training_target": training_target_3d, 
                    "motion_pred_2d": motion_pred_2d, "gt_motion_2d": gt_motion_2d})

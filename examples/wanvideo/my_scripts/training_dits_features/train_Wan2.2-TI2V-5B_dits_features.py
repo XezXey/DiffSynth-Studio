@@ -37,6 +37,7 @@ def wan_parser():
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
     parser.add_argument("--preferred_timestep_id", type=int, nargs='+', default=[-1], help="Preferred timestep IDs for training on DIT features. Use -1 to indicate the last timestep.")
     parser.add_argument("--preferred_dit_block_id", type=int, nargs='+', default=[-1], help="Preferred DIT block IDs for training on DIT features. Use -1 to indicate the last DIT block.")
+    parser.add_argument("--n_joints", type=int, default=25, help="Number of joints in the motion data.")
     #NOTE: Extra parameters for training additional modules
     parser.add_argument("--save_name", type=str, default=None, help="Name to use when saving checkpoints.")
     parser.add_argument("--use_wandb", default=False, action="store_true", help="Whether to use wandb for logging.")
@@ -53,6 +54,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         preset_lora_path=None, preset_lora_model=None,
         preferred_timestep_id=[-1],   # Use last timestep by default to train on dit features
         preferred_dit_block_id=[-1],    # Use last block by default to train on dit features
+        n_joints=25,
         use_gradient_checkpointing=True,
         use_gradient_checkpointing_offload=False,
         extra_inputs=None,
@@ -95,7 +97,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         else:
             vae_latent_dim = self.pipe.vae.z_dim if hasattr(self.pipe.vae, 'z_dim') else self.pipe.dit.out_dim
             self.extra_modules = JointHeatMapMotionUpsample(
-                n_joints=65,    #TODO: Fix this!!!
+                n_joints=n_joints,    #TODO: Fix this!!!
                 dit_dim=self.pipe.dit.dim,
                 head_out_dim=self.pipe.dit.out_dim,
                 vae_latent_dim=vae_latent_dim,
@@ -119,7 +121,7 @@ class WanTrainingModule(DiffusionTrainingModule):
     def parse_extra_inputs(self, data, extra_inputs, inputs_shared):
         for extra_input in extra_inputs:
             if extra_input == "input_image":
-                inputs_shared["input_image"] = data["video"][0]
+                inputs_shared["input_image"] = data["video"][0] # Use first frame of the video as input image
             elif extra_input == "end_image":
                 inputs_shared["end_image"] = data["video"][-1]
             elif extra_input == "reference_image" or extra_input == "vace_reference_image":
@@ -235,6 +237,7 @@ if __name__ == "__main__":
         lora_checkpoint=args.lora_checkpoint,
         preset_lora_path=args.preset_lora_path,
         preset_lora_model=args.preset_lora_model,
+        n_joints=args.n_joints,
         use_gradient_checkpointing=args.use_gradient_checkpointing,
         use_gradient_checkpointing_offload=args.use_gradient_checkpointing_offload,
         extra_inputs=args.extra_inputs,

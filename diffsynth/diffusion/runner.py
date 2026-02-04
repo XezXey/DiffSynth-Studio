@@ -109,6 +109,7 @@ def launch_training_task_add_modules(
     num_workers: int = 1,
     save_steps: int = None,
     vis_steps: int = None,
+    log_steps: int = None,
     num_epochs: int = 1,
     args = None,
 ):
@@ -119,6 +120,7 @@ def launch_training_task_add_modules(
         num_workers = args.dataset_num_workers
         save_steps = args.save_steps
         vis_steps = args.vis_steps
+        log_steps = args.log_steps
         num_epochs = args.num_epochs
     print("[#] Training with additional modules...")
     print("Save steps: ", save_steps)
@@ -134,7 +136,8 @@ def launch_training_task_add_modules(
     model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
     #TODO: In case we save everything, the loading safetensors might need to be address whether how to load exact weight to the model and extra modules.
     for epoch_id in range(num_epochs):
-        for data in tqdm(dataloader):
+        t = tqdm(dataloader)
+        for data in t:
             with accelerator.accumulate(model):
                 optimizer.zero_grad()
                 if dataset.load_from_cache:
@@ -144,11 +147,12 @@ def launch_training_task_add_modules(
                     loss, pred_dict = model({}, inputs=data)
                 else:
                     loss, pred_dict = model(data)
+                t.set_description(f"Epoch {epoch_id}/{num_epochs} Loss: {loss.item():.4f}")
                 accelerator.backward(loss)
                 optimizer.step()
                 model_logger.on_step_end(accelerator, model, save_steps, name=name)
                 if training_logger is not None:
-                    training_logger.on_step_end(accelerator, loss, pred_dict, vis_steps)
+                    training_logger.on_step_end(accelerator, loss, pred_dict, vis_steps, log_steps)
                 scheduler.step()
         if save_steps is None:
             model_logger.on_epoch_end(accelerator, model, epoch_id, name=name)

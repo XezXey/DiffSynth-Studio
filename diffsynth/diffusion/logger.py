@@ -60,15 +60,16 @@ class TrainingLogger:
         self.num_steps = 0
         self.log_dir = log_dir
 
-    def on_step_end(self, accelerator: Accelerator, loss, pred_dict: dict, vis_steps=None):
+    def on_step_end(self, accelerator: Accelerator, loss, pred_dict: dict, vis_steps=None, log_steps=None):
         self.num_steps += 1
         accelerator.wait_for_everyone()
         if accelerator.is_main_process:
             if vis_steps is not None and self.num_steps % vis_steps == 0:
-                # Log loss
-                self.log_loss(loss.item())
                 # Log predictions
                 self.log_predictions(pred_dict)
+            if log_steps is not None and self.num_steps % log_steps == 0:
+                # Log loss
+                self.log_loss(loss.item())
 
     def on_epoch_end(self, accelerator: Accelerator, loss, pred_dict: dict, save_steps=None):
         accelerator.wait_for_everyone()
@@ -94,10 +95,10 @@ class TrainingLogger:
         if motion_pred_2d.shape[0] == 1:
             motion_pred_2d = motion_pred_2d[0]
             
-        print(motion_pred_3d.shape)
-        print(motion_gt_3d.shape)
-        print(motion_pred_2d.shape)
-        print(motion_gt_2d.shape)
+        # print(motion_pred_3d.shape)
+        # print(motion_gt_3d.shape)
+        # print(motion_pred_2d.shape)
+        # print(motion_gt_2d.shape)
         joint_names = pred_dict['joint_names']
         bones = pred_dict['bones']
         edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
