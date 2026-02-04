@@ -39,8 +39,8 @@ class UnifiedMotionDataset(torch.utils.data.Dataset):
     @staticmethod
     def default_motion_operator(
         base_path="",
-        max_pixels=1920*1080, height=None, width=None,
-        height_division_factor=16, width_division_factor=16,
+        # max_pixels=1920*1080, height=None, width=None,
+        # height_division_factor=16, width_division_factor=16,
         num_frames=81, time_division_factor=4, time_division_remainder=1,
     ):
         return RouteByType(operator_map=[

@@ -28,8 +28,9 @@ if __name__ == "__main__":
     data_path = args.data_path
     output_path = args.output_path
     os.makedirs(output_path, exist_ok=True)
-    df_render = pd.DataFrame(columns=['video', 'prompt'])
-    df_combined = pd.DataFrame(columns=['video', 'prompt'])
+    df_render = pd.DataFrame(columns=['video', 'motion', 'prompt'])
+    df_single_motion = pd.DataFrame(columns=['video', 'motion', 'prompt'])
+    df_single_sample = pd.DataFrame(columns=['video', 'motion', 'prompt'])
     # Example path: /data/mint/Motion_Dataset/Mixamo/output_mixamo/<motion_name>/<camera_name>/
     # cam_0 = front view, cam_1 = right side view, cam_2 = back view, cam_3 = left side view
     motion_dirs = glob.glob(os.path.join(data_path, '*'))
@@ -55,19 +56,24 @@ if __name__ == "__main__":
                 output_video_path = os.path.join(output_path, f'{vid_name}_proj.mp4').replace(' ', '\ ')
                 vid_from_frames(input_path, output_video_path)
 
-            # Write metadata
-            with open(os.path.join(output_path, 'metadata.csv'), 'a') as f:
-                cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
-                prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view."
-                vid_file = f"{vid_name}_render.mp4"
-                df_render = pd.concat([df_render, pd.DataFrame([[vid_file, prompt]], columns=['video', 'prompt'])], ignore_index=True)
             
             # Copy motion_data.npz
             src_npz = os.path.join(cam, 'motion_data.npz').replace(' ', '\ ')
             dst_npz = os.path.join(output_path, f'{vid_name}_motion_data.npz').replace(' ', '\ ')
             os.system(f'cp {src_npz} {dst_npz}')
             
+            # Write metadata
+            with open(os.path.join(output_path, 'metadata.csv'), 'a') as f:
+                cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
+                prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view. Static camera perspective, no zoom or panning."
+                motion_file = f"{vid_name}_motion_data.npz"
+                vid_file = f"{vid_name}_render.mp4"
+                df_render = pd.concat([df_render, pd.DataFrame([[vid_file, motion_file, prompt]], columns=['video', 'motion', 'prompt'])], ignore_index=True)
+            
     df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
-    df_combined.to_csv(os.path.join(output_path, 'metadata_combined.csv'), index=False)
+    df_single_motion = df_render[df_render['motion'].str.contains('Walking')]
+    df_single_motion.to_csv(os.path.join(output_path, 'metadata_single_motion.csv'), index=False)
+    df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam_0_motion_data.npz')]
+    df_single_sample.to_csv(os.path.join(output_path, 'metadata_single_sample.csv'), index=False)
 
             

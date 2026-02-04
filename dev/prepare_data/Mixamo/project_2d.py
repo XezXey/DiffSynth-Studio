@@ -9,6 +9,7 @@ import argparse
 parser = argparse.ArgumentParser(description="Project 3D joints to 2D using camera parameters from JSON.")
 parser.add_argument('--path', type=str, required=True, help='Path to the directory containing skeleton_{name}.json')
 parser.add_argument('--skip_plot_map', default=False, action='store_true', help='Whether to plot 2D joint projections on images')
+parser.add_argument('--only_body_joints', default=False, action='store_true', help='Whether to only process body joints (ignore fingers etc.)')
 args = parser.parse_args()
 
 def project(fx, fy, cx, cy, E_bl, j3d):
@@ -127,7 +128,30 @@ def process(path):
         data = json.load(f)
 
     j3d = np.array(data["joints_3d"], dtype=np.float32)  # (F, J, 3)
-
+    # print(data['bones'])
+    # print(data['joint_names'])
+    # print(len(data['bones']))
+    # print(len(data['joint_names']))
+    if args.only_body_joints:
+        #NOTE: Currently only for Mixamo skeleton names, need to be modified for other datasets later...
+        exlcude_joint_names = [
+            'mixamorig:LeftHandThumb1', 'mixamorig:LeftHandThumb2', 'mixamorig:LeftHandThumb3', 'mixamorig:LeftHandThumb4', 'mixamorig:LeftHandIndex1', 'mixamorig:LeftHandIndex2', 'mixamorig:LeftHandIndex3', 'mixamorig:LeftHandIndex4', 'mixamorig:LeftHandMiddle1', 'mixamorig:LeftHandMiddle2', 'mixamorig:LeftHandMiddle3', 'mixamorig:LeftHandMiddle4', 'mixamorig:LeftHandRing1', 'mixamorig:LeftHandRing2', 'mixamorig:LeftHandRing3', 'mixamorig:LeftHandRing4', 'mixamorig:LeftHandPinky1', 'mixamorig:LeftHandPinky2', 'mixamorig:LeftHandPinky3', 'mixamorig:LeftHandPinky4',
+            'mixamorig:RightHandThumb1', 'mixamorig:RightHandThumb2', 'mixamorig:RightHandThumb3', 'mixamorig:RightHandThumb4', 'mixamorig:RightHandIndex1', 'mixamorig:RightHandIndex2', 'mixamorig:RightHandIndex3', 'mixamorig:RightHandIndex4', 'mixamorig:RightHandMiddle1', 'mixamorig:RightHandMiddle2', 'mixamorig:RightHandMiddle3', 'mixamorig:RightHandMiddle4', 'mixamorig:RightHandRing1', 'mixamorig:RightHandRing2', 'mixamorig:RightHandRing3', 'mixamorig:RightHandRing4', 'mixamorig:RightHandPinky1', 'mixamorig:RightHandPinky2', 'mixamorig:RightHandPinky3', 'mixamorig:RightHandPinky4',
+        ]
+        exclude_indices = [data["joint_names"].index(name) for name in exlcude_joint_names if name in data["joint_names"]]
+        j3d = np.delete(j3d, exclude_indices, axis=1)
+        # Also remove bones involving these joints
+        new_bones = []
+        for start_name, end_name in data["bones"]:
+            if start_name in exlcude_joint_names or end_name in exlcude_joint_names:
+                continue
+            new_bones.append((start_name, end_name))
+        data["bones"] = new_bones
+        # Also update joint_names
+        data["joint_names"] = [name for name in data["joint_names"] if name not in exlcude_joint_names]
+    else:
+        pass
+        
     # Camera parameters
     fx, fy, cx, cy = data["cams_intr"]
     H, W = int(cy * 2), int(cx * 2)
