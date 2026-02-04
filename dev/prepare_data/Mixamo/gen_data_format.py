@@ -75,5 +75,8 @@ if __name__ == "__main__":
     df_single_motion.to_csv(os.path.join(output_path, 'metadata_single_motion.csv'), index=False)
     df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam_0_motion_data.npz')]
     df_single_sample.to_csv(os.path.join(output_path, 'metadata_single_sample.csv'), index=False)
+    df_front_view = df_render[df_render['motion'].str.contains('cam_0')]
+    df_front_view.to_csv(os.path.join(output_path, 'metadata_front_view.csv'), index=False)
+    
 
             
