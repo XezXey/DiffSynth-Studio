@@ -4,6 +4,7 @@ from plotly.subplots import make_subplots
 import os, glob
 import torch as th
 import torchvision
+import tqdm
 import cv2
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -409,17 +410,23 @@ class MultiSkeleton2D3DAnimator:
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder_list", type=str, nargs="+", required=True,)
+parser.add_argument("--folder", type=str, required=True,)
 parser.add_argument("--output_path", type=str, required=True,)
 args = parser.parse_args()
 
 os.makedirs(args.output_path, exist_ok=True)
 
-for folder in args.folder_list:
+motion_folder = os.listdir(args.folder)
+for folder in tqdm.tqdm(motion_folder):
+    folder = os.path.join(args.folder, folder)
     anim = MultiSkeleton2D3DAnimator(fps=30, show_2d=True, y_axis_down=True)
     data = np.load(f"{folder}/motion_pred_3d.npz", allow_pickle=True)
     motion_pred_3d = data["motion_pred_3d"]  # (T, J, 3)
     motion_pred_2d = data["motion_pred_2d"]  # (T, J, 2)
+    w = 1280
+    h = 720
+    motion_pred_2d[..., 0] = motion_pred_2d[..., 0] * w 
+    motion_pred_2d[..., 1] = motion_pred_2d[..., 1] * h
     T = motion_pred_3d.shape[0]
     bones = data.get("bones", None)  # list of (a,b) edges
     joint_names = data.get("joint_names", None)
@@ -433,9 +440,9 @@ for folder in args.folder_list:
         motion_pred_3d,
         edges=edges,
         color="blue",
-        name=f"{os.path.basename(folder)}-3D",
+        name=f"Prediction",
         K2=motion_pred_2d,
-        color2d="red",
+        color2d="blue",
     )
     if motion_gt_3d is not None and motion_gt_2d is not None:
         motion_gt_2d = motion_gt_2d[:T, :, :2]
@@ -443,10 +450,10 @@ for folder in args.folder_list:
         anim.add_sequence(
             motion_gt_3d,
             edges=edges,
-            color="green",
-            name=f"{os.path.basename(folder)}-GT-3D",
+            color="red",
+            name=f"Ground Truth",
             K2=motion_gt_2d,
-            color2d="orange",
+            color2d="red",
         )
     motion_name = os.path.basename(folder) if folder[-1] != "/" else os.path.basename(folder[:-1])
     anim.fig.write_html(f"{args.output_path}/{motion_name}_animation.html")
@@ -457,8 +464,8 @@ for folder in args.folder_list:
     vid, _, _ = torchvision.io.read_video(vid)  # preload video to avoid
     _, H, W, C = vid.shape
     motion_pred_2d = motion_pred_2d.copy()
-    motion_pred_2d[:, :, 0] = motion_pred_2d[:, :, 0] * W
-    motion_pred_2d[:, :, 1] = motion_pred_2d[:, :, 1] * H
+    motion_pred_2d[:, :, 0] = (motion_pred_2d[:, :, 0]/w) * W
+    motion_pred_2d[:, :, 1] = (motion_pred_2d[:, :, 1]/h) * H
 
     def plot_skel_on_image(frame, skel_2d, edges, bone_color=(0, 255, 0), joint_color=(0, 0, 255)):
         for a, b in edges:
