@@ -50,7 +50,7 @@ def wan_parser():
     parser.add_argument("--num_inference_steps", type=int, default=50)
     parser.add_argument("--save_path", type=str, default="./results/")
     parser.add_argument("--cfg_scale", type=float, default=5.0)
-    parser.add_argument("--save_suffix", type=str, default=None)
+    # parser.add_argument("--save_suffix", type=str, default=None)
     # Video size config
     parser.add_argument("--height", type=int, default=704)
     parser.add_argument("--width", type=int, default=1248)
@@ -64,6 +64,10 @@ def wan_parser():
     # Sampling & Scheduler config
     parser.add_argument("--denoising_strength", type=float, default=1.0)
     parser.add_argument("--sigma_shift", type=int, default=5.0)
+    # Joint's prediction head config
+    parser.add_argument("--n_joints", type=int, default=65)
+    parser.add_argument("--preferred_timestep_id", type=int, nargs="+", default=[-1])
+    parser.add_argument("--preferred_dit_block_id", type=int, nargs="+", default=[-1])
     return parser
 
 
@@ -222,7 +226,8 @@ class WanInferenceModule(torch.nn.Module):
         return noise_pred, return_dict
 
 model_configs = [
-    ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
+    # ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors", **vram_config),
+    ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors"),
     # ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors"),
     # ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth", **vram_config),
     # ModelConfig(model_id=args.model_id, origin_file_pattern=f"{model_version}_VAE.pth", **vram_config),
@@ -256,8 +261,8 @@ for p in pipe.parameters():
 
 inference_module = WanInferenceModule(
     pipe=pipe,
-    preferred_timestep_id=[-1],
-    preferred_dit_block_id=[-1],
+    preferred_timestep_id=args.preferred_timestep_id,
+    preferred_dit_block_id=args.preferred_dit_block_id,
 )
 
 data = next(iter(dataset))
@@ -280,8 +285,7 @@ class DummyExtraModules(torch.nn.Module):
         super().__init__()
         vae_latent_dim = pipe.vae.z_dim if hasattr(pipe.vae, 'z_dim') else pipe.dit.out_dim
         self.extra_modules = JointHeatMapMotionUpsample(
-            # n_joints=23,
-            n_joints=65,
+            n_joints=args.n_joints,
             dit_dim=pipe.dit.dim,
             head_out_dim=pipe.dit.out_dim,
             vae_latent_dim=vae_latent_dim,
@@ -320,7 +324,8 @@ assert dit_features is not None, "Dit features not returned from model_fn."
 assert grid_size is not None, "Grid size not returned from model_fn."
 pixel_coords, depth = extra_modules(pipe, dit_features, grid_size)  # pixel_coords = (B, J, T, 2); depth = (B, J, T, 1)
 
-motion_data = "/host/data/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p_with_motion_data/Walking_cam_0_motion_data.npz"
+
+motion_data = f"{os.path.dirname(args.input_video)}/{os.path.basename(args.input_video).replace('_render.mp4', '_motion_data.npz')}"
 motion_data = np.load(motion_data)
 # Reconstruct 3D motion from (u, v, depth) using camera intrinsics and extrinsics
 fx, fy, cx, cy = motion_data["cams_intr"]
@@ -338,11 +343,12 @@ motion_pred_3d = unproject_torch(fx, fy, cx, cy, E_bl, torch.stack([u, v, d], di
 motion_pred_3d = motion_pred_3d.cpu().numpy()
 
 output = {
+    "bones": motion_data["bones"],
+    "joint_names": motion_data["joint_names"],
     "motion_pred_3d": motion_pred_3d,
     "motion_pred_2d": motion_pred_2d.cpu().numpy(),
+    "motion_gt_3d": motion_data["joints_3d"],
+    "motion_gt_2d": motion_data["joints_2d"],
 }
 
-if args.save_suffix is None:
-    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}.npz"), **output)
-else:
-    np.savez(os.path.join(args.save_path, f"motion_pred_3d_{args.model_id.split('/')[-1]}_{args.save_suffix}.npz"), **output)
+np.savez(os.path.join(args.save_path, f"motion_pred_3d.npz"), **output)
