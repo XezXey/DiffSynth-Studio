@@ -368,7 +368,11 @@ if __name__ == "__main__":
     parser.add_argument('--img_width', type=int, default=512, help='Image width')
     args = parser.parse_args(argv)
 
-    fbx = glob.glob(f'{args.fbx_path}/*.fbx')
+
+    if '.fbx' in args.fbx_path:
+        fbx = [args.fbx_path]
+    else:
+        fbx = glob.glob(f'{args.fbx_path}/*.fbx')
     print(f"[#] Available FBX files: {fbx}", flush=True)
     print(f"[#] Number of cameras: {args.n_cam}", flush=True)
     print(f"[#] Output directory: {args.out_dir}", flush=True)

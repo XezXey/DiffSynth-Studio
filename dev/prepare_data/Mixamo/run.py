@@ -29,7 +29,8 @@ if __name__ == "__main__":
         img_height = f"--img_height {args.img_height}"
 
         blender_cmd = f"{args.blender_path} -b -P ./render_fbx.py -- {fbx} {out_dir} {n_cam} {follow_bone} {cam_height} {cam_radius} {img_width} {img_height}"
-        os.system(blender_cmd)
+        print(blender_cmd)
+        # os.system(blender_cmd)
         print("#" * 100)
 
     if args.run_projection:
