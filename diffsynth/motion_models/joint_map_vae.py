@@ -225,10 +225,11 @@ class JointHeatMapMotionUpsample(th.nn.Module):
             if i == 1 or i == 2 or i == 3:
                 in_dim = in_dim // 2
                 upsamples.append(CausalConv3d(in_dim, out_dim, 3, padding=1))
+                upsamples.append(th.nn.SiLU())
             if i != len(dim_mult) - 1:
                     upsamples.append(th.nn.Sequential(
                             Upsample(scale_factor=(2., 2.), mode='nearest-exact'),
-                            th.nn.Conv2d(out_dim, out_dim // 2, 3, padding=1)))
+                            th.nn.Conv2d(out_dim, out_dim // 2, 3, padding=1), th.nn.SiLU()))
 
         self.upsamples = th.nn.Sequential(*upsamples).to(device)
         # Joint heatmap final conv
