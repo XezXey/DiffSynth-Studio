@@ -5,6 +5,9 @@ import os, glob
 import torch as th
 import torchvision
 import cv2
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 
 class MultiSkeleton2D3DAnimator:
     """
@@ -419,16 +422,19 @@ for folder in args.folder_list:
     motion_pred_2d = data["motion_pred_2d"]  # (T, J, 2)
     T = motion_pred_3d.shape[0]
     bones = data.get("bones", None)  # list of (a,b) edges
+    joint_names = data.get("joint_names", None)
+    bones = bones.tolist() if bones is not None else []
+    joint_names = joint_names.tolist() if joint_names is not None else []
+    edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
     motion_gt_3d = data.get("motion_gt_3d", None)
     motion_gt_2d = data.get("motion_gt_2d", None)
 
     anim.add_sequence(
         motion_pred_3d,
-        edges=bones,
+        edges=edges,
         color="blue",
         name=f"{os.path.basename(folder)}-3D",
         K2=motion_pred_2d,
-        edges2d=bones,
         color2d="red",
     )
     if motion_gt_3d is not None and motion_gt_2d is not None:
@@ -436,11 +442,10 @@ for folder in args.folder_list:
         motion_gt_3d = motion_gt_3d[:T, ...]
         anim.add_sequence(
             motion_gt_3d,
-            edges=bones,
+            edges=edges,
             color="green",
             name=f"{os.path.basename(folder)}-GT-3D",
             K2=motion_gt_2d,
-            edges2d=bones,
             color2d="orange",
         )
     motion_name = os.path.basename(folder) if folder[-1] != "/" else os.path.basename(folder[:-1])
@@ -451,20 +456,29 @@ for folder in args.folder_list:
     vid = glob.glob(f"{folder}/*.mp4")[0]
     vid, _, _ = torchvision.io.read_video(vid)  # preload video to avoid
     _, H, W, C = vid.shape
+    motion_pred_2d = motion_pred_2d.copy()
+    motion_pred_2d[:, :, 0] = motion_pred_2d[:, :, 0] * W
+    motion_pred_2d[:, :, 1] = motion_pred_2d[:, :, 1] * H
 
-    vid = vid.cpu().numpy()
+    def plot_skel_on_image(frame, skel_2d, edges, bone_color=(0, 255, 0), joint_color=(0, 0, 255)):
+        for a, b in edges:
+            pt1 = (int(skel_2d[a, 0]), int(skel_2d[a, 1]))
+            pt2 = (int(skel_2d[b, 0]), int(skel_2d[b, 1]))
+            cv2.line(frame, pt1, pt2, color=bone_color, thickness=2)
+        for j in range(skel_2d.shape[0]):
+            pt = (int(skel_2d[j, 0]), int(skel_2d[j, 1]))
+            cv2.circle(frame, pt, radius=5, color=joint_color, thickness=-1)
+
+    vid = vid[:T, ...].cpu().numpy()
     for t in range(T):
         frame = vid[t].copy()
+        # Make to frame a bit more transparent
+        frame = cv2.addWeighted(frame, 0.7, np.ones_like(frame)*255, 0.3, 0)
         # Draw 2D skeletons on frame
-        skel_t = motion_pred_2d[t]
-        for a, b in bones:
-            pt1 = (int(skel_t[a, 0]), int(skel_t[a, 1]))
-            pt2 = (int(skel_t[b, 0]), int(skel_t[b, 1]))
-            cv2.line(frame, pt1, pt2, color=(0, 0, 255), thickness=2)
-        for j in range(skel_t.shape[0]):
-            pt = (int(skel_t[j, 0]), int(skel_t[j, 1]))
-            cv2.circle(frame, pt, radius=3, color=(0, 255, 0), thickness=-1)
+        plot_skel_on_image(frame, motion_pred_2d[t], edges, bone_color=(0, 0, 255), joint_color=(0, 0, 255))
+        plot_skel_on_image(frame, motion_gt_2d[t], edges, bone_color=(255, 0, 0), joint_color=(255, 0, 0))
         vid[t] = frame
+
     save_vid_path = f"{args.output_path}/{motion_name}_with_skeleton.mp4"
     torchvision.io.write_video(
         save_vid_path,
@@ -473,10 +487,3 @@ for folder in args.folder_list:
         video_codec="libx264",
         options={"crf": "17"}
     )
-
-
-
-
-
-    print(vid.shape)
-    exit()
