@@ -1419,7 +1419,16 @@ def model_fn_wan_video_return_features(
             torch.zeros((1, latents.shape[3] * latents.shape[4] // 4), dtype=latents.dtype, device=latents.device),
             torch.ones((latents.shape[2] - 1, latents.shape[3] * latents.shape[4] // 4), dtype=latents.dtype, device=latents.device) * timestep
         ]).flatten()
+        # print(next(dit.parameters()).device, timestep.device, latents.device)
+        # print(sinusoidal_embedding_1d(dit.freq_dim, timestep).device)
+        # for name, param in dit.named_parameters():
+        #     print(name, param.device)
+        # exit()
+        dit = dit.to(device=timestep.device)
+        # print("time_embedding weight:", dit.time_embedding[0].weight.device, dit.time_embedding[0].bias.device)
+        # print("time_embedding weight:", dit.time_embedding[-1].weight.device, dit.time_embedding[-1].bias.device)
         t = dit.time_embedding(sinusoidal_embedding_1d(dit.freq_dim, timestep).unsqueeze(0))
+
         if use_unified_sequence_parallel and dist.is_initialized() and dist.get_world_size() > 1:
             t_chunks = torch.chunk(t, get_sequence_parallel_world_size(), dim=1)
             t_chunks = [torch.nn.functional.pad(chunk, (0, 0, 0, t_chunks[0].shape[1]-chunk.shape[1]), value=0) for chunk in t_chunks]
@@ -1559,6 +1568,7 @@ def model_fn_wan_video_return_features(
                             x, context, t_mod, freqs,
                             use_reentrant=False,
                         )
+                        print("Checkpoint offload used at block:", x.device, x.dtype)
                 elif use_gradient_checkpointing:
                     x = torch.utils.checkpoint.checkpoint(
                         create_custom_forward(block),

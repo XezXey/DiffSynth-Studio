@@ -20,9 +20,14 @@ def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # training_target = pipe.scheduler.training_target(inputs["input_latents"], noise, timestep)
 
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
+    # for k in inputs:
+    #     if isinstance(inputs[k], torch.Tensor):
+    #         inputs[k] = inputs[k].to(device=pipe.device)
+    # timestep = timestep.to(device=pipe.device)
     with torch.no_grad():   #NOTE: No grad for original prediction (DiTs's part)
         noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
 
+    # dit_features = return_dict.get("dit_features", None).to(device=extra_modules.device)
     dit_features = return_dict.get("dit_features", None)
     grid_size = return_dict.get("grid_size", None)
     assert dit_features is not None, "Dit features not returned from model_fn."

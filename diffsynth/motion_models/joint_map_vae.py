@@ -110,7 +110,7 @@ class JointHeatMapMotionVAEDecoder(th.nn.Module):
         weight = th.zeros((1, 1, out_T, H * self.upsampling_factor, W * self.upsampling_factor), dtype=hidden_states.dtype, device=data_device)
         values = th.zeros((1, 3, out_T, H * self.upsampling_factor, W * self.upsampling_factor), dtype=hidden_states.dtype, device=data_device)
 
-        for h, h_, w, w_ in tqdm(tasks, desc="VAE decoding"):
+        for h, h_, w, w_ in tqdm(tasks, desc="VAE decoding", leave=False):
             hidden_states_batch = hidden_states[:, :, :, h:h_, w:w_].to(computation_device)
             # Call VideoVAE_.decode(...)
             hidden_states_batch = self.videovae_decode(hidden_states_batch).to(data_device)
@@ -230,6 +230,7 @@ class JointHeatMapMotionUpsample(th.nn.Module):
                     upsamples.append(th.nn.Sequential(
                             Upsample(scale_factor=(2., 2.), mode='nearest-exact'),
                             th.nn.Conv2d(out_dim, out_dim // 2, 3, padding=1), th.nn.SiLU()))
+                            # th.nn.Conv2d(out_dim, out_dim // 2, 3, padding=1)))
 
         self.upsamples = th.nn.Sequential(*upsamples).to(device)
         # Joint heatmap final conv
