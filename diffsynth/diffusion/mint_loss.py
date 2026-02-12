@@ -1,6 +1,39 @@
 from .base_pipeline import BasePipeline
 import torch
 
+def CachingDitFeatures(pipe: BasePipeline, **inputs):
+
+    preferred_timestep_id = inputs["preferred_timestep_id"]
+    timestep_id = torch.tensor(preferred_timestep_id, dtype=torch.int)
+
+    timestep = pipe.scheduler.timesteps[timestep_id].to(dtype=pipe.torch_dtype, device=pipe.device)
+    
+    noise = torch.randn_like(inputs["input_latents"])
+    inputs["latents"] = pipe.scheduler.add_noise(inputs["input_latents"], noise, timestep)
+
+    # Retrieve all dit blocks's features
+    inputs['preferred_dit_block_id'] = list(range(len(pipe.dit.blocks)))
+    models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
+    with torch.no_grad():   #NOTE: No grad for original prediction (DiTs's part)
+        noise_pred, return_dict = pipe.model_fn(**models, **inputs, timestep=timestep)
+
+    dit_features = return_dict.get("dit_features", None)
+    grid_size = return_dict.get("grid_size", None)
+    dim = pipe.dit.dim
+    out_dim = pipe.dit.out_dim
+    patch_size = pipe.dit.patch_size
+    z_dim = pipe.vae.z_dim if pipe.vae is not None else pipe.dit.out_dim
+    assert dit_features is not None, "Dit features not returned from model_fn."
+    assert grid_size is not None, "Grid size not returned from model_fn."
+    assert dim is not None, "Dit dim not found."
+    assert out_dim is not None, "Dit out_dim not found."
+    assert patch_size is not None, "Dit patch_size not found."
+    assert z_dim is not None, "VAE z_dim not found."
+
+    inputs.update({"dit_features": dit_features, "grid_size": grid_size, "dim": dim, "out_dim": out_dim, 
+                   "patch_size": patch_size, "z_dim": z_dim})
+    return inputs
+
 def TrainingOnDitFeaturesLoss(pipe: BasePipeline, extra_modules=None, **inputs):
     # max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * len(pipe.scheduler.timesteps))
     # min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))

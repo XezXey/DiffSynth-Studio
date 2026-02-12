@@ -98,6 +98,32 @@ def launch_data_process_task_add_modules(
                     data = data[0]
                 torch.save(data, save_path)
 
+def launch_data_process_with_wan_task_add_modules(
+    accelerator: Accelerator,
+    dataset: torch.utils.data.Dataset,
+    model: DiffusionTrainingModule,
+    model_logger: ModelLogger,
+    num_workers: int = 8,
+    args = None,
+):
+    if args is not None:
+        num_workers = args.dataset_num_workers
+        
+    dataloader = torch.utils.data.DataLoader(dataset, shuffle=False, collate_fn=lambda x: x[0], num_workers=num_workers)
+    model, dataloader = accelerator.prepare(model, dataloader)
+    
+    for data_id, data in enumerate(tqdm(dataloader)):
+        with accelerator.accumulate(model):
+            with torch.no_grad():
+                folder = os.path.join(model_logger.output_path, str(accelerator.process_index))
+                os.makedirs(folder, exist_ok=True)
+                save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), f"{data_id}.pth")
+                if dataset.load_from_cache:
+                    data = model({}, inputs=data)
+                else:
+                    data = model(data)
+                torch.save(data, save_path)
+
 def launch_training_task_add_modules(
     accelerator: Accelerator,
     dataset: torch.utils.data.Dataset,

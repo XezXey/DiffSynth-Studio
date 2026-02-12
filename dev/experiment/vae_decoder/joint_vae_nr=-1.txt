@@ -1,0 +1,66 @@
+JointVAE(
+  (model): VAEDecoder(
+    (conv2): CausalConv3d(48, 48, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+    (decoder): Decoder3d(
+      (conv1): CausalConv3d(48, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+      (middle): Sequential(
+        (0): ResidualBlock(
+          (residual): Sequential(
+            (0): RMS_norm()
+            (1): SiLU()
+            (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            (3): RMS_norm()
+            (4): SiLU()
+            (5): Dropout(p=0.0, inplace=False)
+            (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+          )
+          (shortcut): Identity()
+        )
+        (1): AttentionBlock(
+          (norm): RMS_norm()
+          (to_qkv): Conv2d(384, 1152, kernel_size=(1, 1), stride=(1, 1))
+          (proj): Conv2d(384, 384, kernel_size=(1, 1), stride=(1, 1))
+        )
+        (2): ResidualBlock(
+          (residual): Sequential(
+            (0): RMS_norm()
+            (1): SiLU()
+            (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            (3): RMS_norm()
+            (4): SiLU()
+            (5): Dropout(p=0.0, inplace=False)
+            (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+          )
+          (shortcut): Identity()
+        )
+      )
+      (upsamples): Sequential(
+        (0): Resample(
+          (resample): Sequential(
+            (0): Upsample(scale_factor=(2.0, 2.0), mode='nearest-exact')
+            (1): Conv2d(384, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+          )
+          (time_conv): CausalConv3d(384, 768, kernel_size=(3, 1, 1), stride=(1, 1, 1))
+        )
+        (1): Resample(
+          (resample): Sequential(
+            (0): Upsample(scale_factor=(2.0, 2.0), mode='nearest-exact')
+            (1): Conv2d(384, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+          )
+          (time_conv): CausalConv3d(384, 768, kernel_size=(3, 1, 1), stride=(1, 1, 1))
+        )
+        (2): Resample(
+          (resample): Sequential(
+            (0): Upsample(scale_factor=(2.0, 2.0), mode='nearest-exact')
+            (1): Conv2d(192, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+          )
+        )
+      )
+      (head): Sequential(
+        (0): RMS_norm()
+        (1): SiLU()
+        (2): CausalConv3d(96, 50, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+      )
+    )
+  )
+)

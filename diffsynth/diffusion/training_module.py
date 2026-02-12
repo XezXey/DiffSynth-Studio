@@ -185,6 +185,7 @@ class DiffusionTrainingModule(torch.nn.Module):
 
 
     def split_pipeline_units(self, task, pipe, trainable_models=None, lora_base_model=None):
+        #NOTE: This function will determine which units are used in the current task.
         models_require_backward = []
         if trainable_models is not None:
             models_require_backward += trainable_models.split(",")
@@ -193,6 +194,8 @@ class DiffusionTrainingModule(torch.nn.Module):
         if task.endswith(":data_process"):
             _, pipe.units = pipe.split_pipeline_units(models_require_backward)
         elif task.endswith(":train"):
+            pipe.units, _ = pipe.split_pipeline_units(models_require_backward)
+        elif task.endswith("data_process_with_wan"):
             pipe.units, _ = pipe.split_pipeline_units(models_require_backward)
         return pipe
     

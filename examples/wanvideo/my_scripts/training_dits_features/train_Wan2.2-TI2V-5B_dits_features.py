@@ -6,18 +6,18 @@ from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionUpsample
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
-from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss
-# def seed_everything(seed: int):
-#     import random
-#     import numpy as np
-#     import torch
+from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss, CachingDitFeatures
+def seed_everything(seed: int):
+    import random
+    import numpy as np
+    import torch
 
-#     random.seed(seed)
-#     np.random.seed(seed)
-#     torch.manual_seed(seed)
-#     torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
-# seed_everything(47)
+seed_everything(47)
 
 import wandb
 
@@ -38,7 +38,7 @@ def wan_parser():
     parser.add_argument("--preferred_dit_block_id", type=int, nargs='+', default=[-1], help="Preferred DIT block IDs for training on DIT features. Use -1 to indicate the last DIT block.")
     parser.add_argument("--n_joints", type=int, default=25, help="Number of joints in the motion data.")
     #NOTE: Extra parameters for training additional modules
-    parser.add_argument("--save_name", type=str, default=None, help="Name to use when saving checkpoints.")
+    parser.add_argument("--wandb_save_name", type=str, default=None, help="Name of this wandb run.")
     parser.add_argument("--use_wandb", default=False, action="store_true", help="Whether to use wandb for logging.")
     return parser
 
@@ -91,7 +91,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        if ":data_process" in task:
+        if ":data_process" in task or ":data_process_with_wan" in task:
             self.extra_modules = None
         else:
             vae_latent_dim = self.pipe.vae.z_dim if hasattr(self.pipe.vae, 'z_dim') else self.pipe.dit.out_dim
@@ -121,6 +121,7 @@ class WanTrainingModule(DiffusionTrainingModule):
             "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
             "dit_features:train": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
             "dit_features:data_process": lambda pipe, *args: args,
+            "dit_features:data_process_with_wan": lambda pipe, inputs_shared, inputs_posi, inputs_nega: CachingDitFeatures(pipe, **inputs_shared, **inputs_posi),
         }
 
     def parse_extra_inputs(self, data, extra_inputs, inputs_shared):
@@ -171,16 +172,26 @@ class WanTrainingModule(DiffusionTrainingModule):
             "joint_names": data['motion']["joint_names"],
             "bones": data['motion']["bones"],
         }
+        print(inputs_shared['num_frames'])
+        print(inputs_shared['joints_3d'].shape)
+        print(inputs_shared['joints_2d'].shape)
+        print(len(inputs_shared['input_video']))
         inputs_shared = self.parse_extra_inputs(data, self.extra_inputs, inputs_shared)
         return inputs_shared, inputs_posi, inputs_nega
     
     def forward(self, data, inputs=None):
         if inputs is None: inputs = self.get_pipeline_inputs(data)
+        if self.task.endswith(":data_process_with_wan"):
+            inputs[0]['preferred_dit_block_id'] = self.preferred_dit_block_id
+            inputs[0]['preferred_timestep_id'] = self.preferred_timestep_id
         inputs = self.transfer_data_to_device(inputs, self.pipe.device, self.pipe.torch_dtype)
         for unit in self.pipe.units:
             inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
 
-        if ':data_process' in self.task:
+        if ':data_process_with_wan' in self.task:
+            loss = self.task_to_loss[self.task](self.pipe, *inputs)
+            pred_dict = {}
+        elif ':data_process' in self.task:
             loss = self.task_to_loss[self.task](self.pipe, *inputs)
             pred_dict = {}
         else:
@@ -201,8 +212,8 @@ if __name__ == "__main__":
     multi_gpu = num_gpus > 1
     if num_gpus == 2:
         print("2 GPUs detected. Put DiTs model on GPU 0 and other models on GPU 1.")
-        
 
+    print(args.num_frames)
     dataset = UnifiedMotionDataset(
         base_path=args.dataset_base_path,
         metadata_path=args.dataset_metadata_path,
@@ -272,7 +283,7 @@ if __name__ == "__main__":
             # Set the wandb project where this run will be logged.
             project="SkelAg",
             # Name of this run
-            name=args.save_name,
+            name=args.wandb_save_name,
             # Track hyperparameters and run metadata.
             config={
                 # Model info
@@ -288,7 +299,7 @@ if __name__ == "__main__":
                 "num_frames": args.num_frames,
                 # Saving info
                 "output_path": args.output_path,
-                "save_name": args.save_name,
+                "wandb_save_name": args.wandb_save_name,
                 # Dataset info
                 "dataset_base_path": args.dataset_base_path,
                 "dataset_metadata_path": args.dataset_metadata_path,
@@ -314,5 +325,6 @@ if __name__ == "__main__":
         "dit_features": launch_training_task_add_modules,
         "dit_features:train": launch_training_task_add_modules,
         "dit_features:data_process": launch_data_process_task_add_modules,
+        "dit_features:data_process_with_wan": launch_data_process_with_wan_task_add_modules,
     }
     launcher_map[args.task](accelerator, dataset, model, model_logger, training_logger, args=args)

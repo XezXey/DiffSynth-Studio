@@ -339,6 +339,9 @@ class WanModel(torch.nn.Module):
             for _ in range(num_layers)
         ])
         self.head = Head(dim, out_dim, patch_size, eps)
+        # print(self.head)
+        # print(dim, out_dim, patch_size, eps)
+        # exit()
         head_dim = dim // num_heads
         self.freqs = precompute_freqs_cis_3d(head_dim)
 
@@ -371,6 +374,10 @@ class WanModel(torch.nn.Module):
         return x
 
     def unpatchify(self, x: torch.Tensor, grid_size: torch.Tensor):
+        # print("Unpatchify input x shape:", x.shape)
+        # print("Grid size:", grid_size)
+        # print("Patch size:", self.patch_size)
+        # exit()
         return rearrange(
             x, 'b (f h w) (x y z c) -> b c (f x) (h y) (w z)',
             f=grid_size[0], h=grid_size[1], w=grid_size[2], 

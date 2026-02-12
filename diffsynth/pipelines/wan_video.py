@@ -564,9 +564,11 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
         if vace_reference_image is not None:
             f = len(vace_reference_image) if isinstance(vace_reference_image, list) else 1
             length += f
-        #NOTE: VAE's latent channel is 16
-        # (1, 16, 1+T/4, H/8, W/8)
-        shape = (1, pipe.vae.model.z_dim, length, height // pipe.vae.upsampling_factor, width // pipe.vae.upsampling_factor)
+        #NOTE: VAE's latent channel is 16 (From paper Wan2.1), Wan2.2 seems to be 48
+        # (1, C=[16, 48], 1+T/4, H/8, W/8)
+        # vae_latent_dim = pipe.vae.z_dim if hasattr(pipe.vae, 'z_dim') else pipe.dit.out_dim
+        shape = (1, pipe.vae.z_dim, length, height // pipe.vae.upsampling_factor, width // pipe.vae.upsampling_factor)
+        # shape = (1, pipe.vae.model.z_dim, length, height // pipe.vae.upsampling_factor, width // pipe.vae.upsampling_factor)
         noise = pipe.generate_noise(shape, seed=seed, rand_device=rand_device)
         if vace_reference_image is not None:
             noise = torch.concat((noise[:, :, -f:], noise[:, :, :-f]), dim=2)
@@ -1606,7 +1608,11 @@ def model_fn_wan_video_return_features(
         x = x[:, reference_latents.shape[1]:]
         f -= 1
     x = dit.unpatchify(x, (f, h, w))
-    return x, {'dit_features':torch.stack(dit_features), 'grid_size':(f,h,w)}
+    print(x.shape)
+    print(dit_features[0].shape)
+    exit()
+    return x, {'dit_features':torch.stack(dit_features), 'grid_size':(f,h,w), 'patch_size':dit.patch_size,
+            'dim':dit.dim, 'out_dim':dit.out_dim}
 
 
 def model_fn_wan_video(
