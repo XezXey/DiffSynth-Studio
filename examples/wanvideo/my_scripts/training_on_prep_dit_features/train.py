@@ -49,6 +49,7 @@ class TrainOnDiTFeatures(L.LightningModule):
             "joints_2d": data['motion']["joints_2d"]
         }
 
+
     def configure_optimizers(self):
         optimizer = th.optim.AdamW(list(self.head.parameters()) + list(self.joint_vae.parameters()), lr=self.lr)
         return optimizer
