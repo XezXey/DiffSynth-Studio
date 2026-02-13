@@ -2,7 +2,7 @@ import os, torch
 import plotly
 import wandb
 from accelerate import Accelerator
-from ..utils.vis.vis import MultiSkeleton3DAnimator, MultiSkeleton2D3DAnimator
+from .vis import MultiSkeleton2D3DAnimator
 
 class ModelLogger:
     def __init__(self, output_path, remove_prefix_in_ckpt=None, state_dict_converter=lambda x:x):

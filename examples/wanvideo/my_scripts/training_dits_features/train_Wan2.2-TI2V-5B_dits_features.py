@@ -172,10 +172,10 @@ class WanTrainingModule(DiffusionTrainingModule):
             "joint_names": data['motion']["joint_names"],
             "bones": data['motion']["bones"],
         }
-        print(inputs_shared['num_frames'])
-        print(inputs_shared['joints_3d'].shape)
-        print(inputs_shared['joints_2d'].shape)
-        print(len(inputs_shared['input_video']))
+        # print(inputs_shared['num_frames'])
+        # print(inputs_shared['joints_3d'].shape)
+        # print(inputs_shared['joints_2d'].shape)
+        # print(len(inputs_shared['input_video']))
         inputs_shared = self.parse_extra_inputs(data, self.extra_inputs, inputs_shared)
         return inputs_shared, inputs_posi, inputs_nega
     
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     if num_gpus == 2:
         print("2 GPUs detected. Put DiTs model on GPU 0 and other models on GPU 1.")
 
-    print(args.num_frames)
+    print(f"args.num_frames: {args.num_frames}")
     dataset = UnifiedMotionDataset(
         base_path=args.dataset_base_path,
         metadata_path=args.dataset_metadata_path,
