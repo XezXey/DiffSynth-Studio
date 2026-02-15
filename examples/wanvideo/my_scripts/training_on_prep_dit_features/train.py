@@ -1,8 +1,9 @@
 import torch as th
+from lightning.pytorch.utilities import rank_zero_only
 import lightning as L
 import numpy as np
 import glob
-from dataset import DitFeaturesDataset, collate_fn_
+from dataset import DitFeaturesDataset
 from model import JointVAE38, Head
 import argparse
 from einops import rearrange
@@ -30,25 +31,13 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
         self.make_parameters_trainable(self.joint_head)
+        
+        self.training_step_outputs = []
+        self.step = 0
 
     def make_parameters_trainable(self, module):
         for param in module.parameters():
             param.requires_grad = True
-
-    def parse_extra_inputs(self, data, extra_inputs, inputs_dict):
-        for key in extra_inputs:
-            if key in data:
-                inputs_dict[key] = data[key]
-        return inputs_dict
-    
-    def forward(self, data):
-        print(data)
-        inputs_shared = {
-            "num_frames": data['motion']["num_frames"],
-            "joints_3d": data['motion']["joints_3d"],
-            "joints_2d": data['motion']["joints_2d"]
-        }
-
 
     def configure_optimizers(self):
         optimizer = th.optim.AdamW(list(self.head.parameters()) + list(self.joint_vae.parameters()), lr=self.lr)
@@ -71,31 +60,35 @@ class TrainOnDiTFeatures(L.LightningModule):
         """
         
         inputs = batch
+        # for k in inputs.keys():
+        #     if isinstance(inputs[k], th.Tensor):
+        #         print(f"{k}: shape {inputs[k].shape}, dtype {inputs[k].dtype}, device {inputs[k].device}")
+        # exit()
         dit_features = inputs["dit_features"].squeeze(0)  # B, C, H, W
-        inp = dit_features[self.preferred_dit_block_id].type(th.float32)  # 1, #tokens, C
+        inp = dit_features.type(th.float32)  # 1, #tokens, C
         grid_size = inputs["grid_size"]
         patch_size = inputs["patch_size"]
-        print(grid_size, patch_size)
+        # print(grid_size, patch_size)
 
         out_head = self.head(inp)  # 1, out_dim, H', W
-        print(out_head.shape)
+        # print(out_head.shape)
         out_unpatched = self.unpatchify(out_head, grid_size, patch_size)  # 1, out_dim, T, H, W
-        print(out_unpatched.shape)
+        # print(out_unpatched.shape)
         out_decoded = self.joint_vae.decode(out_unpatched, device='cuda')  # 1, J*3, T, 1, 1
-        print(out_decoded.shape)
+        # print(out_decoded.shape)
         out_joints_map = self.joint_head(out_decoded)  # 1, J*2, T, 1, 1
-        print(out_joints_map.shape)
+        # print(out_joints_map.shape)
 
         pixel_coords, depth = self.map_to_joint(out_joints_map)  # pixel_coords: (1, J, T, 2); depth: (1, J, T, 1)
-        print(pixel_coords.shape, depth.shape)
+        # print(pixel_coords.shape, depth.shape)
 
-        print(inputs["cams_intr"].shape)
-        print(inputs["cams_extr"].shape)
+        # print(inputs["cams_intr"].shape)
+        # print(inputs["cams_extr"].shape)
         fx, fy, cx, cy = inputs["cams_intr"].squeeze(0) # (4)
         org_h = cy * 2.0 + 1
         org_w = cx * 2.0 + 1
         E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
-        print(th.is_tensor(E_bl), E_bl.shape, E_bl.dtype, E_bl.ndim)
+        # print(th.is_tensor(E_bl), E_bl.shape, E_bl.dtype, E_bl.ndim)
 
         m3d_gt = inputs["joints_3d"].squeeze(0)  # T, J, 3
         m2d_gt = inputs["joints_2d"].squeeze(0)  # T, J, 3
@@ -125,12 +118,22 @@ class TrainOnDiTFeatures(L.LightningModule):
         loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
         loss = loss_3d + loss_2d * 10.0
         
-        inputs.update({"motion_pred": motion_pred_3d, "training_target": training_target_3d, 
-                    "motion_pred_2d": motion_pred_2d, "gt_motion_2d": m2d_gt})
-        return loss, inputs
+        # inputs.update({"motion_pred": motion_pred_3d, "training_target": training_target_3d, 
+        #             "motion_pred_2d": motion_pred_2d, "gt_motion_2d": m2d_gt})
+        
+        # self.training_step_outputs.append({"loss": loss, "inputs": inputs})
+        # self.step += 1
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+    
+    @rank_zero_only
+    def on_train_step_end(self, outputs, batch, batch_idx):
+        print(outputs)
+        exit()
 
-
-
+    @rank_zero_only
+    def on_train_epoch_end(self, outputs, batch, batch_idx):
+        print(outputs)
         exit()
 
     def unproject_torch(self, fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
@@ -246,9 +249,6 @@ class TrainOnDiTFeatures(L.LightningModule):
         return pixel_coords, depth
 
         
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dit_features_path", type=str, required=True, help="Path to the DiT features files.")
@@ -258,7 +258,7 @@ if __name__ == "__main__":
 
     dit_features_path_list = glob.glob(f"{args.dit_features_path}/*.pth")
     dataset = DitFeaturesDataset(dit_features_path_list)
-    dataloader = th.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=collate_fn_)
+    dataloader = th.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn_)
 
     sample_dat = next(iter(dataloader))
     dim = sample_dat["dim"].item()
@@ -277,7 +277,8 @@ if __name__ == "__main__":
         preferred_dit_block_id = sample_dat["dit_features"].shape[1] - 1    # last block if use -1
     if preferred_dit_block_id < 0 or preferred_dit_block_id >= sample_dat["dit_features"].shape[1]:
         raise ValueError(f"Exceeds preferred_dit_block_id range: 0 ~ {sample_dat['dit_features'].shape[1]-1}")
-
+    dataset.preferred_dit_block_id = preferred_dit_block_id
+    
     model = TrainOnDiTFeatures(dim=dim, out_dim=out_dim, patch_size=patch_size, J=args.J, out_J_chn=2, preferred_dit_block_id=preferred_dit_block_id)
     trainer = L.Trainer(max_epochs=10, accelerator="cuda", devices=1)
     trainer.fit(model, dataloader)
