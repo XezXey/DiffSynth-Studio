@@ -225,7 +225,6 @@ class TrainOnDiTFeatures(L.LightningModule):
             prob_map = th.softmax(heatmap_flat, dim=-1).view(b, t, h, w)  # (b, t, h, w)
 
             # Create coordinate grids
-            # y_coords, x_coords = th.meshgrid(th.arange(h, device=joint_map_list[0].device), th.arange(w, device=joint_map_list[0].device), indexing='ij')
             y_coords, x_coords = th.meshgrid(th.linspace(0, 1, h, device=joint_map_list[0].device), th.linspace(0, 1, w, device=joint_map_list[0].device), indexing='ij')
 
             y_coords = y_coords.view(1, 1, h, w).expand(b, t, h, w)

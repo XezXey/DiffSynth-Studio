@@ -17,7 +17,7 @@ def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-seed_everything(47)
+# seed_everything(47)
 
 import wandb
 

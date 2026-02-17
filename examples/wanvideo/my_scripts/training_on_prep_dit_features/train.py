@@ -7,6 +7,7 @@ from dataset import DitFeaturesDataset
 from model import JointVAE38, Head
 import argparse
 from einops import rearrange
+from lightning.pytorch.loggers import WandbLogger
 
         
 if __name__ == "__main__":
@@ -40,6 +41,22 @@ if __name__ == "__main__":
         raise ValueError(f"Exceeds preferred_dit_block_id range: 0 ~ {sample_dat['dit_features'].shape[1]-1}")
     dataset.preferred_dit_block_id = preferred_dit_block_id
     
-    model = TrainOnDiTFeatures(dim=dim, out_dim=out_dim, patch_size=patch_size, J=args.J, out_J_chn=2, preferred_dit_block_id=preferred_dit_block_id)
-    trainer = L.Trainer(max_epochs=10, accelerator="cuda", devices=args.n_gpus)
+    logger = WandbLogger(project="TrainOnDiTFeatures", name="train_on_prep_dit_features")
+    model = TrainOnDiTFeatures(
+        dim=dim, 
+        out_dim=out_dim, 
+        patch_size=patch_size, 
+        J=args.J, 
+        out_J_chn=2, 
+        preferred_dit_block_id=preferred_dit_block_id, 
+        lr=1e-5
+    )
+
+    trainer = L.Trainer(
+        max_epochs=10, 
+        accelerator="cuda", 
+        devices=args.n_gpus, 
+        log_every_n_steps=10, 
+        logger=logger,
+    )
     trainer.fit(model, dataloader)
