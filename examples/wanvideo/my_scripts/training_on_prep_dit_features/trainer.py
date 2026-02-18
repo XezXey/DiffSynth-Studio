@@ -60,9 +60,10 @@ class TrainOnDiTFeatures(L.LightningModule):
             x=patch_size[0], y=patch_size[1], z=patch_size[2]
         )
     
+    @rank_zero_only
     def validation_step(self, batch, batch_idx):
         # You can implement validation logic here, similar to training_step but without backpropagation.
-        print("VALLY", batch.keys())
+        print("VALLY", batch.keys(), batch_idx)
         print("from process", th.distributed.get_rank())
         pass
     

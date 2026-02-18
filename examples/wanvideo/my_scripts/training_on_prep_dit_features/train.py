@@ -75,6 +75,7 @@ if __name__ == "__main__":
         val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=val_dataset.collate_fn_)
     else:
         val_dataloader = None
+    val_dataset.preferred_dit_block_id = preferred_dit_block_id
 
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
     os.makedirs(args.output_path + "/vis", exist_ok=True)
