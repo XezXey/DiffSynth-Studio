@@ -138,7 +138,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         check_val_every_n_epoch=4,
         limit_val_batches=args.limit_val_batches,
-        limit_train_batches=1,
+        limit_train_batches=1.0,
         num_sanity_val_steps=0,   # skip val sanity check to save time, set to e.g. 2 to enable and check if val dataloader and validation step work without OOM or other errors before actual training starts
         default_root_dir=args.output_path + "/lightning_logs",
     )
