@@ -115,7 +115,7 @@ if __name__ == "__main__":
         dim=dim, 
         out_dim=out_dim, 
         patch_size=patch_size, 
-        J=args.J, 
+        J=args.J,
         out_J_chn=args.out_J_chn, 
         preferred_dit_block_id=preferred_dit_block_id, 
         lr=args.learning_rate,

@@ -68,7 +68,15 @@ class TrainOnDiTFeatures(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         with th.no_grad():
             loss_dict, output_dict = self.forward_pass(batch, batch_idx)
-            self.log_dict({f"val/{k}": v for k, v in loss_dict.items()}, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+            if self.global_rank == 0:
+                self.log_dict(
+                    {f"val/{k}": v for k, v in loss_dict.items()},
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=True,
+                    logger=True,
+                    sync_dist=False
+                )
         if self.global_rank == 0 and len(self._val_last_plot_data) < self.val_plot_max_batches:
             self._val_last_plot_data.append(output_dict)  # keep last batch for visualization
 
