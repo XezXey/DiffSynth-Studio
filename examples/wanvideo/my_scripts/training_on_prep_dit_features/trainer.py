@@ -17,11 +17,14 @@ class TrainOnDiTFeatures(L.LightningModule):
                  J, 
                  out_J_chn, 
                  preferred_dit_block_id,
+                 log_dir,
+                 save_steps,
+                 vis_steps,
+                 logger,
                  eps=1e-8, 
                  num_res_blocks=0, 
                  lr=1e-4,
-                 vis_steps=100,
-                 log_dir="plots"):
+                ):
         super().__init__()
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).train()
         self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).train()
@@ -31,7 +34,9 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.J = J
         self.out_j_chn = out_J_chn
         self.vis_steps = vis_steps
+        self.save_steps = save_steps
         self.log_dir = log_dir
+        self.wandb_logger = logger
 
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
@@ -147,16 +152,20 @@ class TrainOnDiTFeatures(L.LightningModule):
     @rank_zero_only
     def on_train_batch_end(self, outputs, batch, batch_idx):
         """Called after every training step. Plot results every plot_every_n_steps."""
-        if (self.global_step + 1) % self.vis_steps == 0:
+        if (self.global_step) % self.vis_steps == 0:
             self._plot_results(self.global_step)
+        if (self.global_step) % self.save_steps == 0:
+            self._save_checkpoint(self.global_step)
+        
+
 
     @rank_zero_only
     def on_train_epoch_end(self):
         """Called at the end of each epoch. Plot final state of the epoch."""
-        self._plot_results(self.global_step, tag="epoch_end")
+        self._plot_results(self.global_step)
 
     @rank_zero_only
-    def _plot_results(self, step, tag="step"):
+    def _plot_results(self, step):
         if self._last_plot_data is None:
             return
         plot_data = self._last_plot_data
@@ -173,10 +182,15 @@ class TrainOnDiTFeatures(L.LightningModule):
         anim.add_sequence(motion_gt_3d, K2=motion_gt_2d,edges=edges, color="blue", name="Ground Truth")
         anim.add_sequence(motion_pred_3d, K2=motion_pred_2d, edges=edges, color="red",  name="Prediction")
         # Save to html
-        save_path = os.path.join(self.log_dir, f"motion_pred_step_{step}.html")
+        save_path = os.path.join(self.log_dir, "vis", f"motion_pred_step_{step}.html")
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
         # Log html to wandb
-        self.training_logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": step})
+        self.logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": step})
+    
+    @rank_zero_only
+    def _save_checkpoint(self, step):
+        save_path = os.path.join(self.log_dir, "ckpt", f"checkpoint_step_{step}.pth")
+        th.save(self.model.state_dict(), save_path)
 
 
     def unproject_torch(self, fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
