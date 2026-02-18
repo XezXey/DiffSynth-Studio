@@ -8,7 +8,7 @@ class DitFeaturesDataset(th.utils.data.Dataset):
     def __init__(self, dit_features_path_list, preferred_dit_block_id=0):
         self.dit_features_path_list = dit_features_path_list
         self.preferred_dit_block_id = preferred_dit_block_id
-        self.focus_fields = ['dit_features', 'grid_size', 'dim', 'out_dim', 'patch_size', 'z_dim', 'joints_3d', 'joints_2d', 'cams_intr', 'cams_extr', 'height', 'width']
+        self.focus_fields = ['dit_features', 'grid_size', 'dim', 'out_dim', 'patch_size', 'z_dim', 'joints_3d', 'joints_2d', 'cams_intr', 'cams_extr', 'height', 'width', 'joint_names', 'bones']
     
     def __len__(self):
         return len(self.dit_features_path_list)

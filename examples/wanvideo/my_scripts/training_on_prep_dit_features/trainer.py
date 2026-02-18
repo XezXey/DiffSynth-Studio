@@ -1,12 +1,13 @@
 import torch as th
 from lightning.pytorch.utilities import rank_zero_only
+import wandb
 import lightning as L
 import numpy as np
-import glob
 from dataset import DitFeaturesDataset
 from model import JointVAE38, Head
-import argparse
 from einops import rearrange
+from diffsynth.diffusion.vis import MultiSkeleton2D3DAnimator
+import glob, os, plotly, argparse
 
 class TrainOnDiTFeatures(L.LightningModule):
     def __init__(self, 
@@ -18,7 +19,9 @@ class TrainOnDiTFeatures(L.LightningModule):
                  preferred_dit_block_id,
                  eps=1e-8, 
                  num_res_blocks=0, 
-                 lr=1e-4):
+                 lr=1e-4,
+                 vis_steps=100,
+                 log_dir="plots"):
         super().__init__()
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).train()
         self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).train()
@@ -27,13 +30,14 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.preferred_dit_block_id = preferred_dit_block_id
         self.J = J
         self.out_j_chn = out_J_chn
+        self.vis_steps = vis_steps
+        self.log_dir = log_dir
 
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
         self.make_parameters_trainable(self.joint_head)
         
-        self.training_step_outputs = []
-        self.step = 0
+        self._last_plot_data = None  # stores latest batch outputs for plotting
 
     def make_parameters_trainable(self, module):
         for param in module.parameters():
@@ -49,6 +53,11 @@ class TrainOnDiTFeatures(L.LightningModule):
             f=grid_size[0], h=grid_size[1], w=grid_size[2], 
             x=patch_size[0], y=patch_size[1], z=patch_size[2]
         )
+    
+    def validation_step(self, batch, batch_idx):
+        # You can implement validation logic here, similar to training_step but without backpropagation.
+        print(batch.keys())
+        pass
     
     def training_step(self, batch, batch_idx):
         """
@@ -118,23 +127,57 @@ class TrainOnDiTFeatures(L.LightningModule):
         loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
         loss = loss_3d + loss_2d * 10.0
         
-        # inputs.update({"motion_pred": motion_pred_3d, "training_target": training_target_3d, 
-        #             "motion_pred_2d": motion_pred_2d, "gt_motion_2d": m2d_gt})
-        
-        # self.training_step_outputs.append({"loss": loss, "inputs": inputs})
-        # self.step += 1
+        # Cache detached tensors for plotting — no graph retention
+        self._last_plot_data = {
+            "motion_pred_3d": motion_pred_3d.detach().cpu(),
+            "motion_gt_3d": training_target_3d.detach().cpu(),
+            "motion_pred_2d": motion_pred_2d.detach().cpu(),
+            "motion_gt_2d": m2d_gt.detach().cpu(),
+            "loss_3d": loss_3d.item(),
+            "loss_2d": loss_2d.item(),
+            "joint_names": inputs["joint_names"].detach().cpu(),
+            "bones": inputs["bones"].detach().cpu()
+        }
+
         self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss_3d", loss_3d, prog_bar=False)
+        self.log("train_loss_2d", loss_2d, prog_bar=False)
         return loss
     
     @rank_zero_only
-    def on_train_step_end(self, outputs, batch, batch_idx):
-        print(outputs)
-        exit()
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        """Called after every training step. Plot results every plot_every_n_steps."""
+        if (self.global_step + 1) % self.vis_steps == 0:
+            self._plot_results(self.global_step)
 
     @rank_zero_only
-    def on_train_epoch_end(self, outputs, batch, batch_idx):
-        print(outputs)
-        exit()
+    def on_train_epoch_end(self):
+        """Called at the end of each epoch. Plot final state of the epoch."""
+        self._plot_results(self.global_step, tag="epoch_end")
+
+    @rank_zero_only
+    def _plot_results(self, step, tag="step"):
+        if self._last_plot_data is None:
+            return
+        plot_data = self._last_plot_data
+        motion_pred_3d = plot_data["motion_pred_3d"]
+        motion_gt_3d = plot_data["motion_gt_3d"]
+        motion_pred_2d = plot_data["motion_pred_2d"]
+        motion_gt_2d = plot_data["motion_gt_2d"]
+
+        joint_names = plot_data["joint_names"]
+        bones = plot_data["bones"]
+        edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
+
+        anim = MultiSkeleton2D3DAnimator(fps=30, title="Motions", y_axis_down=True)
+        anim.add_sequence(motion_gt_3d, K2=motion_gt_2d,edges=edges, color="blue", name="Ground Truth")
+        anim.add_sequence(motion_pred_3d, K2=motion_pred_2d, edges=edges, color="red",  name="Prediction")
+        # Save to html
+        save_path = os.path.join(self.log_dir, f"motion_pred_step_{step}.html")
+        plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
+        # Log html to wandb
+        self.training_logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": step})
+
 
     def unproject_torch(self, fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
         """
