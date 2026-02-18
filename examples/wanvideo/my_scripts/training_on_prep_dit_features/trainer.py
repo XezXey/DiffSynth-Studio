@@ -10,21 +10,22 @@ from diffsynth.diffusion.vis import MultiSkeleton2D3DAnimator
 import glob, os, plotly, argparse
 
 class TrainOnDiTFeatures(L.LightningModule):
-    def __init__(self, 
-                 dim, 
-                 out_dim, 
-                 patch_size, 
-                 J, 
-                 out_J_chn, 
-                 preferred_dit_block_id,
-                 log_dir,
-                 save_steps,
-                 vis_steps,
-                 logger,
-                 eps=1e-8, 
-                 num_res_blocks=0, 
-                 lr=1e-4,
-                ):
+    def __init__(
+            self, 
+            dim, 
+            out_dim, 
+            patch_size, 
+            J, 
+            out_J_chn, 
+            preferred_dit_block_id,
+            log_dir,
+            vis_steps,
+            save_steps,
+            logger,
+            eps=1e-8, 
+            num_res_blocks=0, 
+            lr=1e-4,
+            ):
         super().__init__()
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).train()
         self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).train()
@@ -34,9 +35,9 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.J = J
         self.out_j_chn = out_J_chn
         self.vis_steps = vis_steps
-        self.save_steps = save_steps
         self.log_dir = log_dir
         self.wandb_logger = logger
+        self.save_steps = save_steps
 
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
@@ -61,7 +62,8 @@ class TrainOnDiTFeatures(L.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         # You can implement validation logic here, similar to training_step but without backpropagation.
-        print(batch.keys())
+        print("VALLY", batch.keys())
+        print("from process", th.distributed.get_rank())
         pass
     
     def training_step(self, batch, batch_idx):
@@ -72,7 +74,6 @@ class TrainOnDiTFeatures(L.LightningModule):
         - 'joints_2d': ground truth 2D joint positions, shape (1, T, J, 2)
 
         """
-        
         inputs = batch
         # for k in inputs.keys():
         #     if isinstance(inputs[k], th.Tensor):
@@ -140,8 +141,8 @@ class TrainOnDiTFeatures(L.LightningModule):
             "motion_gt_2d": m2d_gt.detach().cpu(),
             "loss_3d": loss_3d.item(),
             "loss_2d": loss_2d.item(),
-            "joint_names": inputs["joint_names"].detach().cpu(),
-            "bones": inputs["bones"].detach().cpu()
+            "joint_names": inputs["joint_names"],
+            "bones": inputs["bones"]
         }
 
         self.log("train_loss", loss, prog_bar=True)
@@ -154,15 +155,14 @@ class TrainOnDiTFeatures(L.LightningModule):
         """Called after every training step. Plot results every plot_every_n_steps."""
         if (self.global_step) % self.vis_steps == 0:
             self._plot_results(self.global_step)
-        if (self.global_step) % self.save_steps == 0:
-            self._save_checkpoint(self.global_step)
-        
-
+        if (self.global_step) % (self.save_steps) == 0:
+            self._save_model(self.global_step)
 
     @rank_zero_only
     def on_train_epoch_end(self):
         """Called at the end of each epoch. Plot final state of the epoch."""
         self._plot_results(self.global_step)
+        self._save_model(self.global_step)
 
     @rank_zero_only
     def _plot_results(self, step):
@@ -185,13 +185,12 @@ class TrainOnDiTFeatures(L.LightningModule):
         save_path = os.path.join(self.log_dir, "vis", f"motion_pred_step_{step}.html")
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
         # Log html to wandb
-        self.logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": step})
-    
-    @rank_zero_only
-    def _save_checkpoint(self, step):
-        save_path = os.path.join(self.log_dir, "ckpt", f"checkpoint_step_{step}.pth")
-        th.save(self.model.state_dict(), save_path)
+        self.wandb_logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": step})
 
+    @rank_zero_only
+    def _save_model(self, step):
+        save_path = os.path.join(self.log_dir, "ckpt", f"model_step_{step}.pth")
+        th.save(self.state_dict(), save_path)
 
     def unproject_torch(self, fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
         """
