@@ -17,8 +17,6 @@ def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-# seed_everything(47)
-
 import wandb
 
 os.environ["DIFFSYNTH_MODEL_BASE_PATH"] = "/host/ist/ist-share/vision/huggingface_hub/"
@@ -40,6 +38,8 @@ def wan_parser():
     #NOTE: Extra parameters for training additional modules
     parser.add_argument("--wandb_save_name", type=str, default=None, help="Name of this wandb run.")
     parser.add_argument("--use_wandb", default=False, action="store_true", help="Whether to use wandb for logging.")
+    #NOTE: Seeding
+    parser.add_argument("--seed", type=int, default=47, help="Random seed for reproducibility.")
     return parser
 
 class WanTrainingModule(DiffusionTrainingModule):
@@ -202,6 +202,7 @@ class WanTrainingModule(DiffusionTrainingModule):
 if __name__ == "__main__":
     parser = wan_parser()
     args = parser.parse_args()
+    seed_everything(args.seed)
     accelerator = accelerate.Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         kwargs_handlers=[accelerate.DistributedDataParallelKwargs(find_unused_parameters=args.find_unused_parameters)],

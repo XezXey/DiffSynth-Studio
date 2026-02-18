@@ -5,21 +5,24 @@ import numpy as np
 import pandas as pd
 import argparse
 import torchvision
+from mylogger.logger import init_logger
+logger = init_logger('chunk_data')
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_dir', type=str, required=True, help='Path to the input directory containing .npz and .mp4 files.')
 parser.add_argument('--output_dir', type=str, required=True, help='Path to the output directory to save chunked data.')
 parser.add_argument('--n_frames', type=int, default=81, help='Number of frames per chunk.')
-parser.add_argument('--overlap', type=int, default=None, help='Number of overlapping frames between chunks. If None, no overlap is used.')
+parser.add_argument('--overlap', type=int, default=0, help='Number of overlapping frames between chunks. If None, no overlap is used.')
 parser.add_argument('--metadata_file', type=str, required=True, help='Path to the metadata file (optional).')
 args = parser.parse_args()
 
 if __name__ == '__main__':
-    if args.overlap is None:
-        args.overlap = args.n_frames // 2 # Default overlap is half of n_frames
+
 
     metadata = pd.read_csv(args.metadata_file)
-    print(f'Loaded metadata from {args.metadata_file} with {len(metadata)} entries.')
-    print(f'Setting overlap to {args.overlap} frames.')
+    logger.info(f'Loaded metadata from {args.metadata_file} with {len(metadata)} entries.')
+    logger.info(f'Chunking videos into segments of {args.n_frames} frames')
+    logger.warning(f'Overlap duration: {args.overlap} frames')
 
     os.makedirs(args.output_dir, exist_ok=True)
     new_metadata = pd.DataFrame({'video': [], 'motion': [], 'prompt': []})
