@@ -44,9 +44,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.make_parameters_trainable(self.joint_head)
         
         self._last_plot_data = None  # stores latest batch outputs for plotting
-        self._val_losses_3d = -1.0
-        self._val_losses_2d = -1.0
-        self._val_losses_total = -1.0
+        self._val_loss_dict = {"loss": [], "loss_3d": [], "loss_2d": []}
         self._val_last_plot_data = []
         self.val_plot_max_batches = 10
 
@@ -66,22 +64,25 @@ class TrainOnDiTFeatures(L.LightningModule):
         )
     
     def validation_step(self, batch, batch_idx):
+        if self.global_rank != 0:
+            return
         with th.no_grad():
             loss_dict, output_dict = self.forward_pass(batch, batch_idx)
-            if self.global_rank == 0:
-                self.log_dict(
-                    {f"val/{k}": v for k, v in loss_dict.items()},
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
-                    logger=True,
-                    sync_dist=False
-                )
-        if self.global_rank == 0 and len(self._val_last_plot_data) < self.val_plot_max_batches:
-            self._val_last_plot_data.append(output_dict)  # keep last batch for visualization
+            self._val_loss_dict['loss'].append(loss_dict['loss'].item())
+            self._val_loss_dict['loss_3d'].append(loss_dict['loss_3d'].item())
+            self._val_loss_dict['loss_2d'].append(loss_dict['loss_2d'].item())
+        if len(self._val_last_plot_data) < self.val_plot_max_batches:
+            self._val_last_plot_data.append(output_dict)
 
     @rank_zero_only
     def on_validation_epoch_end(self):
+        self.log_dict(
+            {f"val/{k}": sum(v) / len(v) for k, v in self._val_loss_dict.items()},
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
         if len(self._val_last_plot_data) > 0:
             os.makedirs(os.path.join(self.log_dir, "vis"), exist_ok=True)
             for idx, d in enumerate(self._val_last_plot_data):
@@ -105,6 +106,7 @@ class TrainOnDiTFeatures(L.LightningModule):
                         })
         # Reset for next val run
         self._val_last_plot_data = []
+        self._val_loss_dict = {"loss": [], "loss_3d": [], "loss_2d": []}
     
     def forward_pass(self, batch, batch_idx):
         inputs = batch

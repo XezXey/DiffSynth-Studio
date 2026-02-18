@@ -74,7 +74,7 @@ if __name__ == "__main__":
     if args.val_dit_features_path is not None:
         val_dit_features_path_list = glob.glob(f"{args.val_dit_features_path}/*.pth")
         val_dataset = DitFeaturesDataset(val_dit_features_path_list)
-        val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=47, collate_fn=val_dataset.collate_fn_)
+        val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4, collate_fn=val_dataset.collate_fn_)
         logger.info(f"Loaded {len(val_dit_features_path_list)} validation samples from {args.val_dit_features_path}")
     else:
         val_dataloader = None
@@ -83,8 +83,12 @@ if __name__ == "__main__":
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
     os.makedirs(args.output_path + "/vis", exist_ok=True)
     os.makedirs(args.output_path + "/ckpt", exist_ok=True)
-    if args.use_wandb:
-        logger.warning("Using wandb logger...")
+
+    # In DDP, Lightning spawns one process per GPU, each re-running this script.
+    # Guard wandb.init() to rank 0 only via LOCAL_RANK env var (set by Lightning before spawning).
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if args.use_wandb and local_rank == 0:
+        logger.warning("Using wandb logger (rank 0 only)...")
         wandb_run = wandb.init(
             # Set the wandb entity where your project will be logged (generally your team name).
             entity="xezxey",
@@ -108,7 +112,8 @@ if __name__ == "__main__":
         )
         wandb_logger = WandbLogger(experiment=wandb_run)
     else:
-        logger.warning("Not using wandb logger...")
+        logger.warning("Not using wandb logger..." if not args.use_wandb else "Skipping wandb init on non-zero rank.")
+        wandb_run = None
         wandb_logger = None
 
     model = TrainOnDiTFeatures(
@@ -131,9 +136,9 @@ if __name__ == "__main__":
         devices=args.n_gpus, 
         log_every_n_steps=args.log_steps, 
         logger=wandb_logger,
-        check_val_every_n_epoch=1,
-        limit_val_batches=0.05, #args.limit_val_batches,
-        limit_train_batches=0.02,
+        check_val_every_n_epoch=4,
+        limit_val_batches=args.limit_val_batches,
+        limit_train_batches=1,
         num_sanity_val_steps=0,   # skip val sanity check to save time, set to e.g. 2 to enable and check if val dataloader and validation step work without OOM or other errors before actual training starts
         default_root_dir=args.output_path + "/lightning_logs",
     )
