@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     dit_features_path_list = glob.glob(f"{args.train_dit_features_path}/*.pth")
     train_dataset = DitFeaturesDataset(dit_features_path_list)
-    train_dataloader = th.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=2, collate_fn=train_dataset.collate_fn_)
+    train_dataloader = th.utils.data.DataLoader(train_dataset, batch_size=2, shuffle=False, num_workers=1, collate_fn=train_dataset.collate_fn_)
 
     sample_dat = next(iter(train_dataloader))
     dim = sample_dat["dim"].item()
