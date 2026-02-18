@@ -25,8 +25,6 @@ class DitFeaturesDataset(th.utils.data.Dataset):
         # If dict samples, keep PIL fields as list; collate tensors normally.
         out = {}
         keys = batch[0].keys()
-        print(keys)
-        exit()
         assert len(batch) == 1, "Only support batch size 1 for now."
         for k in keys:
             if k in self.focus_fields:
