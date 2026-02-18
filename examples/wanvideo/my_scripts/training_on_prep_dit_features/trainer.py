@@ -44,9 +44,11 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.make_parameters_trainable(self.joint_head)
         
         self._last_plot_data = None  # stores latest batch outputs for plotting
-        self._val_losses_3d = []
-        self._val_losses_2d = []
-        self._val_last_plot_data = None
+        self._val_losses_3d = -1.0
+        self._val_losses_2d = -1.0
+        self._val_losses_total = -1.0
+        self._val_last_plot_data = []
+        self.val_plot_max_batches = 10
 
     def make_parameters_trainable(self, module):
         for param in module.parameters():
@@ -64,43 +66,37 @@ class TrainOnDiTFeatures(L.LightningModule):
         )
     
     def validation_step(self, batch, batch_idx):
-        # Only run on rank 0 to avoid DDP hangs (val loop returns None on other ranks — Lightning is fine with that)
-        print("VALID")
-        if self.global_rank != 0:
-            return
         with th.no_grad():
             loss_dict, output_dict = self.forward_pass(batch, batch_idx)
-        self._val_losses_3d.append(output_dict["loss_3d"])
-        self._val_losses_2d.append(output_dict["loss_2d"])
-        self._val_last_plot_data = output_dict  # keep last batch for visualization
+            self.log_dict({f"val/{k}": v for k, v in loss_dict.items()}, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        if self.global_rank == 0 and len(self._val_last_plot_data) < self.val_plot_max_batches:
+            self._val_last_plot_data.append(output_dict)  # keep last batch for visualization
 
     @rank_zero_only
     def on_validation_epoch_end(self):
-        print("VALID")
-        if not self._val_losses_3d:
-            return
-        mean_3d = float(np.mean(self._val_losses_3d))
-        mean_2d = float(np.mean(self._val_losses_2d))
-        mean_total = mean_3d + mean_2d * 10.0
-        print(f"[Val epoch={self.current_epoch}]  loss={mean_total:.6f}  loss_3d={mean_3d:.6f}  loss_2d={mean_2d:.6f}")
-        if self.wandb_logger is not None:
-            self.wandb_logger.log({"val/loss": mean_total, "val/loss_3d": mean_3d, "val/loss_2d": mean_2d, "epoch": self.current_epoch})
-        # Visualize the last batch
-        if self._val_last_plot_data is not None:
-            d = self._val_last_plot_data
-            joint_names = d["joint_names"]
-            edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in d["bones"]]
-            anim = MultiSkeleton2D3DAnimator(fps=30, title="Val Motions", y_axis_down=True)
-            anim.add_sequence(d["motion_gt_3d"],   K2=d["motion_gt_2d"],   edges=edges, color="blue", name="Ground Truth")
-            anim.add_sequence(d["motion_pred_3d"], K2=d["motion_pred_2d"], edges=edges, color="red",  name="Prediction")
-            save_path = os.path.join(self.log_dir, "vis", f"val_motion_epoch_{self.current_epoch}.html")
-            plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
-            if self.wandb_logger is not None:
-                self.wandb_logger.log({"val/motion": wandb.Html(open(save_path)), "epoch": self.current_epoch})
+        if len(self._val_last_plot_data) > 0:
+            os.makedirs(os.path.join(self.log_dir, "vis"), exist_ok=True)
+            for idx, d in enumerate(self._val_last_plot_data):
+                joint_names = d["joint_names"]
+                edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in d["bones"]]
+                anim = MultiSkeleton2D3DAnimator(fps=30, title=f"Val Motions (batch {idx})", y_axis_down=True)
+                anim.add_sequence(d["motion_gt_3d"], K2=d["motion_gt_2d"], edges=edges, color="blue", name="Ground Truth")
+                anim.add_sequence(d["motion_pred_3d"], K2=d["motion_pred_2d"], edges=edges, color="red", name="Prediction")
+                save_path = os.path.join(
+                    self.log_dir,
+                    "vis",
+                    f"val_motion_step_{self.global_step}_epoch_{self.current_epoch}_batch_{idx}.html"
+                )
+                plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
+                if self.wandb_logger is not None:
+                    with open(save_path, "r", encoding="utf-8") as f:
+                        self.wandb_logger.log({
+                            f"val/motion_batch_{idx}": wandb.Html(f.read()),
+                            "step": self.global_step,
+                            "epoch": self.current_epoch,
+                        })
         # Reset for next val run
-        self._val_losses_3d.clear()
-        self._val_losses_2d.clear()
-        self._val_last_plot_data = None
+        self._val_last_plot_data = []
     
     def forward_pass(self, batch, batch_idx):
         inputs = batch
@@ -155,7 +151,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         loss_3d = th.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
         loss_2d = th.nn.functional.mse_loss(motion_pred_2d.float(), m2d_gt.float()) * mask_2d.float()
         loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
-        loss = loss_3d + loss_2d * 10.0
+        loss = loss_3d + loss_2d * 1000.0
 
         output_dict = {
             "motion_pred_3d": motion_pred_3d.detach().cpu(),
@@ -169,9 +165,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         }
         loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d}
 
-
         return loss_dict, output_dict
-
 
     def training_step(self, batch, batch_idx):
         """
@@ -183,7 +177,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         """
         loss_dict, output_dict = self.forward_pass(batch, batch_idx)
         self._last_plot_data = output_dict  # store for visualization in callbacks
-        self.log_dict(loss_dict, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+        self.log_dict({f"train/{k}": v for k, v in loss_dict.items()}, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         return loss_dict["loss"]
 
     @rank_zero_only
@@ -218,10 +212,10 @@ class TrainOnDiTFeatures(L.LightningModule):
         anim.add_sequence(motion_gt_3d, K2=motion_gt_2d,edges=edges, color="blue", name="Ground Truth")
         anim.add_sequence(motion_pred_3d, K2=motion_pred_2d, edges=edges, color="red",  name="Prediction")
         # Save to html
-        save_path = os.path.join(self.log_dir, "vis", f"motion_pred_step_{step}.html")
+        save_path = os.path.join(self.log_dir, "vis", f"train_motion_step_{step}.html")
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
         # Log html to wandb
-        self.wandb_logger.log({"motion_prediction": wandb.Html(open(save_path)), "step": step})
+        self.wandb_logger.log({"train/motion": wandb.Html(open(save_path)), "step": step, "epoch": self.current_epoch})
 
     @rank_zero_only
     def _save_model(self, step):

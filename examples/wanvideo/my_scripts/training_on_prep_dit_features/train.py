@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     dit_features_path_list = glob.glob(f"{args.train_dit_features_path}/*.pth")
     train_dataset = DitFeaturesDataset(dit_features_path_list)
-    train_dataloader = th.utils.data.DataLoader(train_dataset, batch_size=2, shuffle=False, num_workers=1, collate_fn=train_dataset.collate_fn_)
+    train_dataloader = th.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=train_dataset.collate_fn_)
 
     sample_dat = next(iter(train_dataloader))
     dim = sample_dat["dim"].item()
@@ -69,11 +69,13 @@ if __name__ == "__main__":
     if preferred_dit_block_id < 0 or preferred_dit_block_id >= sample_dat["dit_features"].shape[1]:
         raise ValueError(f"Exceeds preferred_dit_block_id range: 0 ~ {sample_dat['dit_features'].shape[1]-1}")
     train_dataset.preferred_dit_block_id = preferred_dit_block_id
+    logger.info(f"Loaded {len(dit_features_path_list)} training samples from {args.train_dit_features_path} with preferred DiT block ID {preferred_dit_block_id}")
     
     if args.val_dit_features_path is not None:
         val_dit_features_path_list = glob.glob(f"{args.val_dit_features_path}/*.pth")
         val_dataset = DitFeaturesDataset(val_dit_features_path_list)
-        val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=val_dataset.collate_fn_)
+        val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=47, collate_fn=val_dataset.collate_fn_)
+        logger.info(f"Loaded {len(val_dit_features_path_list)} validation samples from {args.val_dit_features_path}")
     else:
         val_dataloader = None
     val_dataset.preferred_dit_block_id = preferred_dit_block_id
@@ -129,7 +131,10 @@ if __name__ == "__main__":
         devices=args.n_gpus, 
         log_every_n_steps=args.log_steps, 
         logger=wandb_logger,
-        check_val_every_n_steps=10,
-        limit_val_batches=args.limit_val_batches,
+        check_val_every_n_epoch=1,
+        limit_val_batches=0.05, #args.limit_val_batches,
+        limit_train_batches=0.02,
+        num_sanity_val_steps=0,   # skip val sanity check to save time, set to e.g. 2 to enable and check if val dataloader and validation step work without OOM or other errors before actual training starts
+        default_root_dir=args.output_path + "/lightning_logs",
     )
     trainer.fit(model, train_dataloader, val_dataloader)
