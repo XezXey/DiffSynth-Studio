@@ -33,6 +33,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_wandb", action="store_true", default=False, help="Whether to use wandb for logging.")
     parser.add_argument("--wandb_save_name", type=str, default="train_on_prep_dit_features", help="Name for the wandb run.")
     parser.add_argument("--output_path", type=str, default="./output", help="Path to save the trained model and logs.")
+    parser.add_argument("--limit_val_batches", type=float, default=1.0, help="Fraction of val batches to use per validation epoch (e.g. 0.005 for ~0.5%%). Set to 1.0 for full val set.")
     args = parser.parse_args()
 
     dit_features_path_list = glob.glob(f"{args.train_dit_features_path}/*.pth")
@@ -128,6 +129,7 @@ if __name__ == "__main__":
         devices=args.n_gpus, 
         log_every_n_steps=args.log_steps, 
         logger=wandb_logger,
-        check_val_every_n_epoch=10
+        check_val_every_n_steps=10,
+        limit_val_batches=args.limit_val_batches,
     )
     trainer.fit(model, train_dataloader, val_dataloader)

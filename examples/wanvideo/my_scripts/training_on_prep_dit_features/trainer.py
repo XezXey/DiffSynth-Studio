@@ -44,6 +44,9 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.make_parameters_trainable(self.joint_head)
         
         self._last_plot_data = None  # stores latest batch outputs for plotting
+        self._val_losses_3d = []
+        self._val_losses_2d = []
+        self._val_last_plot_data = None
 
     def make_parameters_trainable(self, module):
         for param in module.parameters():
@@ -60,12 +63,44 @@ class TrainOnDiTFeatures(L.LightningModule):
             x=patch_size[0], y=patch_size[1], z=patch_size[2]
         )
     
-    @rank_zero_only
     def validation_step(self, batch, batch_idx):
-        # You can implement validation logic here, similar to training_step but without backpropagation.
-        print("VALLY", batch.keys(), batch_idx)
-        print("from process", th.distributed.get_rank())
-        pass
+        # Only run on rank 0 to avoid DDP hangs (val loop returns None on other ranks — Lightning is fine with that)
+        print("VALID")
+        if self.global_rank != 0:
+            return
+        with th.no_grad():
+            loss_dict, output_dict = self.forward_pass(batch, batch_idx)
+        self._val_losses_3d.append(output_dict["loss_3d"])
+        self._val_losses_2d.append(output_dict["loss_2d"])
+        self._val_last_plot_data = output_dict  # keep last batch for visualization
+
+    @rank_zero_only
+    def on_validation_epoch_end(self):
+        print("VALID")
+        if not self._val_losses_3d:
+            return
+        mean_3d = float(np.mean(self._val_losses_3d))
+        mean_2d = float(np.mean(self._val_losses_2d))
+        mean_total = mean_3d + mean_2d * 10.0
+        print(f"[Val epoch={self.current_epoch}]  loss={mean_total:.6f}  loss_3d={mean_3d:.6f}  loss_2d={mean_2d:.6f}")
+        if self.wandb_logger is not None:
+            self.wandb_logger.log({"val/loss": mean_total, "val/loss_3d": mean_3d, "val/loss_2d": mean_2d, "epoch": self.current_epoch})
+        # Visualize the last batch
+        if self._val_last_plot_data is not None:
+            d = self._val_last_plot_data
+            joint_names = d["joint_names"]
+            edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in d["bones"]]
+            anim = MultiSkeleton2D3DAnimator(fps=30, title="Val Motions", y_axis_down=True)
+            anim.add_sequence(d["motion_gt_3d"],   K2=d["motion_gt_2d"],   edges=edges, color="blue", name="Ground Truth")
+            anim.add_sequence(d["motion_pred_3d"], K2=d["motion_pred_2d"], edges=edges, color="red",  name="Prediction")
+            save_path = os.path.join(self.log_dir, "vis", f"val_motion_epoch_{self.current_epoch}.html")
+            plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
+            if self.wandb_logger is not None:
+                self.wandb_logger.log({"val/motion": wandb.Html(open(save_path)), "epoch": self.current_epoch})
+        # Reset for next val run
+        self._val_losses_3d.clear()
+        self._val_losses_2d.clear()
+        self._val_last_plot_data = None
     
     def forward_pass(self, batch, batch_idx):
         inputs = batch
@@ -151,9 +186,6 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.log_dict(loss_dict, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         return loss_dict["loss"]
 
-
-       
-    
     @rank_zero_only
     def on_train_batch_end(self, outputs, batch, batch_idx):
         """Called after every training step. Plot results every plot_every_n_steps."""
