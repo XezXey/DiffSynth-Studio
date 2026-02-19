@@ -99,7 +99,7 @@ class TrainOnDiTFeatures(L.LightningModule):
                 plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
                 if self.wandb_logger is not None:
                     with open(save_path, "r", encoding="utf-8") as f:
-                        self.wandb_logger.log({
+                        wandb.log({
                             f"val/motion_batch_{idx}": wandb.Html(f.read()),
                             "step": self.global_step,
                             "epoch": self.current_epoch,
@@ -225,7 +225,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         save_path = os.path.join(self.log_dir, "vis", f"train_motion_step_{step}.html")
         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
         # Log html to wandb
-        self.wandb_logger.log({"train/motion": wandb.Html(open(save_path)), "step": step, "epoch": self.current_epoch})
+        wandb.log({"train/motion": wandb.Html(open(save_path)), "step": step, "epoch": self.current_epoch})
 
     @rank_zero_only
     def _save_model(self, step):
