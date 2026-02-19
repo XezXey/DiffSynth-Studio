@@ -34,11 +34,12 @@ if __name__ == "__main__":
     parser.add_argument("--wandb_save_name", type=str, default="train_on_prep_dit_features", help="Name for the wandb run.")
     parser.add_argument("--output_path", type=str, default="./output", help="Path to save the trained model and logs.")
     parser.add_argument("--limit_val_batches", type=float, default=1.0, help="Fraction of val batches to use per validation epoch (e.g. 0.005 for ~0.5%%). Set to 1.0 for full val set.")
+    parser.add_argument("--overfit_single_batch", action="store_true", default=False, help="Overfit on a single batch to verify code correctness (no bugs).")
     args = parser.parse_args()
 
     dit_features_path_list = glob.glob(f"{args.train_dit_features_path}/*.pth")
     train_dataset = DitFeaturesDataset(dit_features_path_list)
-    train_dataloader = th.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=train_dataset.collate_fn_)
+    train_dataloader = th.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=train_dataset.collate_fn_)
 
     sample_dat = next(iter(train_dataloader))
     dim = sample_dat["dim"].item()
@@ -74,11 +75,12 @@ if __name__ == "__main__":
     if args.val_dit_features_path is not None:
         val_dit_features_path_list = glob.glob(f"{args.val_dit_features_path}/*.pth")
         val_dataset = DitFeaturesDataset(val_dit_features_path_list)
-        val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4, collate_fn=val_dataset.collate_fn_)
+        val_dataloader = th.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4, collate_fn=val_dataset.collate_fn_, persistent_workers=True)
         logger.info(f"Loaded {len(val_dit_features_path_list)} validation samples from {args.val_dit_features_path}")
+        val_dataset.preferred_dit_block_id = preferred_dit_block_id
     else:
         val_dataloader = None
-    val_dataset.preferred_dit_block_id = preferred_dit_block_id
+        args.limit_val_batches = 0.0
 
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
     os.makedirs(args.output_path + "/vis", exist_ok=True)
@@ -86,17 +88,36 @@ if __name__ == "__main__":
 
     # In DDP, Lightning spawns one process per GPU, each re-running this script.
     # Guard wandb.init() to rank 0 only via LOCAL_RANK env var (set by Lightning before spawning).
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    if args.use_wandb and local_rank == 0:
-        logger.warning("Using wandb logger (rank 0 only)...")
-        wandb_run = wandb.init(
-            # Set the wandb entity where your project will be logged (generally your team name).
-            entity="xezxey",
-            # Set the wandb project where this run will be logged.
+    # local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if args.use_wandb:#" and local_rank == 0:
+        # logger.warning("Using wandb logger (rank 0 only)...")
+        # wandb_run = wandb.init(
+        #     # Set the wandb entity where your project will be logged (generally your team name).
+        #     entity="xezxey",
+        #     # Set the wandb project where this run will be logged.
+        #     project="SkelAg",
+        #     # Name of this run
+        #     name=args.wandb_save_name,
+        #     # Track hyperparameters and run metadata.
+        #     config={
+        #         # Training info
+        #         "learning_rate": args.learning_rate,
+        #         "epochs": args.num_epochs,
+        #         # Saving info
+        #         "output_path": args.output_path,
+        #         "wandb_save_name": args.wandb_save_name,
+        #         # Dataset info
+        #         "train_dit_features": args.train_dit_features_path,
+        #         "val_dit_features": args.val_dit_features_path,
+        #     },
+        #     dir=args.output_path + "/wandb",
+        # )
+        # wandb_logger = WandbLogger(experiment=wandb_run)
+        wandb_logger = WandbLogger(
             project="SkelAg",
-            # Name of this run
             name=args.wandb_save_name,
-            # Track hyperparameters and run metadata.
+            save_dir=args.output_path + "/wandb",
+            entity="xezxey",
             config={
                 # Training info
                 "learning_rate": args.learning_rate,
@@ -108,12 +129,9 @@ if __name__ == "__main__":
                 "train_dit_features": args.train_dit_features_path,
                 "val_dit_features": args.val_dit_features_path,
             },
-            dir=args.output_path + "/wandb",
         )
-        wandb_logger = WandbLogger(experiment=wandb_run)
     else:
         logger.warning("Not using wandb logger..." if not args.use_wandb else "Skipping wandb init on non-zero rank.")
-        wandb_run = None
         wandb_logger = None
 
     model = TrainOnDiTFeatures(
@@ -127,19 +145,24 @@ if __name__ == "__main__":
         log_dir=args.output_path,
         vis_steps=args.vis_steps,
         save_steps=args.save_steps,
-        logger=wandb_run,
+        logger=wandb_logger,
     )
 
+    if args.overfit_single_batch:
+        logger.warning("Overfitting on a single batch for sanity check...")
+        overfit_kwargs = dict(overfit_batches=1, limit_train_batches=1, limit_val_batches=0.0)
+    else:
+        overfit_kwargs = dict(limit_val_batches=args.limit_val_batches)
+    
     trainer = L.Trainer(
         max_epochs=args.num_epochs, 
         accelerator="cuda", 
         devices=args.n_gpus, 
         log_every_n_steps=args.log_steps, 
         logger=wandb_logger,
-        check_val_every_n_epoch=4,
-        limit_val_batches=args.limit_val_batches,
-        limit_train_batches=1.0,
-        num_sanity_val_steps=0,   # skip val sanity check to save time, set to e.g. 2 to enable and check if val dataloader and validation step work without OOM or other errors before actual training starts
+        check_val_every_n_epoch=args.check_val_every_n_epoch,
         default_root_dir=args.output_path + "/lightning_logs",
+        profiler="simple",
+        **overfit_kwargs,
     )
     trainer.fit(model, train_dataloader, val_dataloader)

@@ -193,16 +193,16 @@ class TrainOnDiTFeatures(L.LightningModule):
     @rank_zero_only
     def on_train_batch_end(self, outputs, batch, batch_idx):
         """Called after every training step. Plot results every plot_every_n_steps."""
-        if (self.global_step) % self.vis_steps == 0:
+        if self.global_step % self.vis_steps == 0:
             self._plot_results(self.global_step)
         if (self.global_step) % (self.save_steps) == 0:
             self._save_model(self.global_step)
 
-    @rank_zero_only
-    def on_train_epoch_end(self):
-        """Called at the end of each epoch. Plot final state of the epoch."""
-        self._plot_results(self.global_step)
-        self._save_model(self.global_step)
+    # @rank_zero_only
+    # def on_train_epoch_end(self):
+    #     """Called at the end of each epoch. Plot final state of the epoch."""
+    #     self._plot_results(self.global_step)
+    #     self._save_model(self.global_step)
 
     @rank_zero_only
     def _plot_results(self, step):
