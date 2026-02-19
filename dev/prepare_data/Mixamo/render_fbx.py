@@ -76,8 +76,8 @@ def render_multiview(
         follow_bone_name="mixamorig:Hips",
         resolution=(512, 512),
         num_cams=4,
-        radius=3.0,
-        height=1.0,
+        radius=4.5,
+        height=3.0,
         start_motion_frame=0,
         sub_sampling=1,
 ):
@@ -358,8 +358,8 @@ if __name__ == "__main__":
     parser.add_argument('--n_cam', type=int, default=5, help='Number of cameras to create')
     parser.add_argument('--fbx_path', type=str, default='./mixamo_fbx/', help='Path to input FBX files')
     parser.add_argument('--out_dir', type=str, default='./output/', help='Output directory')
-    parser.add_argument('--cam_height', type=float, default=1.0, help='Camera height from the ground')
-    parser.add_argument('--cam_radius', type=float, default=3.0, help='Radius of camera circle around the character')
+    parser.add_argument('--cam_height', type=float, default=3.0, help='Camera height from the ground')
+    parser.add_argument('--cam_radius', type=float, default=4.5, help='Radius of camera circle around the character')
     parser.add_argument('--follow_bone', type=str, default='mixamorig:Hips', help='Bone name for the camera to follow')
     parser.add_argument('--char_color', type=str, default=None, help='Character color: black/white/red/green/blue')
     parser.add_argument('--start_motion_frame', type=int, default=0, help='Start frame of the animation to render')
