@@ -10,7 +10,39 @@ import math
 import json
 import argparse
 import warnings
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    print("[#] tqdm not available, using basic progress output")
+
 warnings.filterwarnings("ignore", category=UserWarning, module='bpy')
+
+def find_bone_by_suffix(armature, suffix):
+    """
+    Find a bone in the armature that ends with the given suffix.
+    Handles various Mixamo rig naming conventions like:
+    - mixamorig:Hips
+    - mixamorig1:Hips
+    - mixamorig2:Hips
+    - Hips (no prefix)
+    
+    Returns the full bone name if found, None otherwise.
+    """
+    for bone in armature.pose.bones:
+        if bone.name.endswith(suffix) or bone.name.endswith(":" + suffix):
+            return bone.name
+    
+    # If no exact match, try case-insensitive
+    suffix_lower = suffix.lower()
+    for bone in armature.pose.bones:
+        bone_lower = bone.name.lower()
+        if bone_lower.endswith(suffix_lower) or bone_lower.endswith(":" + suffix_lower):
+            return bone.name
+    
+    return None
 
 def load_fbx(f, char_color=None):
     bpy.ops.import_scene.fbx(filepath=f)
@@ -80,6 +112,10 @@ def render_multiview(
         height=3.0,
         start_motion_frame=0,
         sub_sampling=1,
+        render_samples=16,
+        use_gpu=False,
+        legacy_mode=False,
+        render_engine='eevee',
 ):
     """
     Create num_cams cameras around the character (on a circle) and
@@ -87,6 +123,18 @@ def render_multiview(
     """
     scene = bpy.context.scene
     os.makedirs(base_outpath, exist_ok=True)
+    
+    # Auto-detect the follow bone if it doesn't exist
+    arm = bpy.data.objects.get(armature_name)
+    if arm and follow_bone_name not in [pb.name for pb in arm.pose.bones]:
+        # Try to find bone by suffix (e.g., "Hips" from "mixamorig:Hips")
+        bone_suffix = follow_bone_name.split(":")[-1]
+        detected_bone = find_bone_by_suffix(arm, bone_suffix)
+        if detected_bone:
+            print(f"[#] Auto-detected follow bone: {detected_bone} (from expected: {follow_bone_name})")
+            follow_bone_name = detected_bone
+        else:
+            print(f"[#] WARNING: Could not find bone matching '{follow_bone_name}' or suffix '{bone_suffix}'")
 
     # Angles around the circle (yaw around Z)
     # e.g. 4 cams: 0°, 90°, 180°, 270°
@@ -124,6 +172,10 @@ def render_multiview(
             cam_offset=cam_offset,
             start_motion_frame=start_motion_frame,
             sub_sampling=sub_sampling,
+            render_samples=render_samples,
+            use_gpu=use_gpu,
+            legacy_mode=legacy_mode,
+            render_engine=render_engine,
         )
 
 def render_animation(
@@ -136,7 +188,10 @@ def render_animation(
         cam_offset=mathutils.Vector((0.0, -3.0, 1.0)),
         start_motion_frame=0,
         sub_sampling=1,
-        char_color=None,
+        render_samples=16,
+        use_gpu=False,
+        legacy_mode=False,
+        render_engine='eevee',
 ):
     os.makedirs(outpath, exist_ok=True)
     scene = bpy.context.scene
@@ -145,6 +200,17 @@ def render_animation(
     arm = bpy.data.objects[armature_name]
     if arm.animation_data is None or arm.animation_data.action is None:
         raise RuntimeError("Armature has no animation_data.action")
+    
+    # Auto-detect the follow bone if it doesn't exist
+    if follow_bone_name not in [pb.name for pb in arm.pose.bones]:
+        bone_suffix = follow_bone_name.split(":")[-1]
+        detected_bone = find_bone_by_suffix(arm, bone_suffix)
+        if detected_bone:
+            print(f"[#] Auto-detected follow bone: {detected_bone} (from expected: {follow_bone_name})")
+            follow_bone_name = detected_bone
+        else:
+            available_bones = ", ".join([pb.name for pb in arm.pose.bones[:10]])
+            raise RuntimeError(f"Could not find bone '{follow_bone_name}' or suffix '{bone_suffix}'. Available bones: {available_bones}...")
 
     action = arm.animation_data.action
     start_frame, end_frame = map(int, action.frame_range)
@@ -159,6 +225,78 @@ def render_animation(
     scene.render.resolution_x = resolution[0]
     scene.render.resolution_y = resolution[1]
     scene.render.resolution_percentage = 100
+    
+    if not legacy_mode:
+        if render_engine.lower() == 'eevee':
+            # Eevee engine - real-time, very fast
+            print(f"[#] Using Eevee engine with {render_samples} samples {'(GPU)' if use_gpu else '(CPU)'}", flush=True)
+            scene.render.engine = 'BLENDER_EEVEE'
+            
+            # Eevee specific optimizations
+            scene.eevee.taa_render_samples = render_samples  # Lower samples = faster (default is 64)
+            scene.eevee.use_bloom = False
+            scene.eevee.use_ssr = False  # Screen space reflections
+            scene.eevee.use_gtao = False  # Ambient occlusion
+            scene.eevee.use_volumetric_shadows = False
+            scene.eevee.use_motion_blur = False
+            
+            # Eevee typically uses GPU by default when available
+            # No special configuration needed for GPU with Eevee
+            
+        elif render_engine.lower() == 'cycles':
+            # Cycles engine - ray-traced, higher quality
+            print(f"[#] Using Cycles engine with {render_samples} samples {'(GPU)' if use_gpu else '(CPU)'}", flush=True)
+            scene.render.engine = 'CYCLES'
+            
+            # Cycles specific settings
+            scene.cycles.samples = render_samples  # Render samples (default is 128)
+            
+            # GPU configuration for Cycles
+            if use_gpu:
+                try:
+                    scene.cycles.device = 'GPU'
+                    prefs = bpy.context.preferences.addons['cycles'].preferences
+                    
+                    # Try different GPU types in order of preference
+                    gpu_types = ['OPTIX', 'CUDA', 'HIP', 'METAL', 'ONEAPI']
+                    gpu_found = False
+                    
+                    for gpu_type in gpu_types:
+                        try:
+                            prefs.compute_device_type = gpu_type
+                            prefs.get_devices()
+                            # Enable all available devices
+                            devices_enabled = 0
+                            for device in prefs.devices:
+                                if device.type in ['OPTIX', 'CUDA', 'HIP', 'METAL', 'ONEAPI']:
+                                    device.use = True
+                                    devices_enabled += 1
+                            
+                            if devices_enabled > 0:
+                                print(f"[#] GPU rendering enabled using {gpu_type} ({devices_enabled} device(s))", flush=True)
+                                gpu_found = True
+                                break
+                        except:
+                            continue
+                    
+                    if not gpu_found:
+                        print(f"[#] No compatible GPU found, falling back to CPU", flush=True)
+                        scene.cycles.device = 'CPU'
+                        
+                except Exception as e:
+                    print(f"[#] GPU configuration error: {e}, using CPU", flush=True)
+                    scene.cycles.device = 'CPU'
+            else:
+                scene.cycles.device = 'CPU'
+                print(f"[#] Using CPU rendering", flush=True)
+        
+        # General optimizations for both engines
+        scene.render.use_simplify = True
+        scene.render.simplify_subdivision = 0  # Disable subdivision in viewport
+    else:
+        # Legacy mode - use default Blender settings
+        print(f"[#] Using legacy mode (default Blender render settings)", flush=True)
+        # Don't modify render engine or settings, use whatever is default
 
     # --- Camera setup ---
     if camera is None:
@@ -250,20 +388,23 @@ def render_animation(
 
     # --- Progress bar (optional) ---
     wm = bpy.context.window_manager if bpy.context.window_manager else None
-    if wm:
+    use_wm_progress = wm and not bpy.app.background  # Only use window_manager progress in GUI mode
+    
+    if use_wm_progress:
         wm.progress_begin(0, total)
 
     # --- Main loop over frames ---
     render_frames = list(range(start_frame, end_frame + 1, sub_sampling))
-    for ti, frame in enumerate(render_frames):
-        if wm:
+    
+    frame_iter = render_frames
+    
+    for ti, frame in enumerate(frame_iter):
+        if use_wm_progress:
             wm.progress_update(ti)
 
         scene.frame_set(frame)
 
         # Camera follow
-        # print(arm.pose.bones.keys(), flush=True)
-        # exit()
         bone_pos = get_bone_world_pos(arm, follow_bone_name)
         cam.location = bone_pos + cam_offset
         bpy.context.view_layer.update()
@@ -311,9 +452,10 @@ def render_animation(
         # ----- Render image -----
         scene.render.filepath = os.path.join(outpath, f"frame{ti:04d}.png")
         bpy.ops.render.render(write_still=True)
-        print(f"[#] Rendered frame {frame} / {end_frame}", flush=True)
+        
+        print(f"[#] Rendered frame {frame}/{end_frame} ({ti+1}/{len(render_frames)})", flush=True)
 
-    if wm:
+    if use_wm_progress:
         wm.progress_end()
 
     print("[#] Rendering finished.", flush=True)
@@ -366,6 +508,10 @@ if __name__ == "__main__":
     parser.add_argument('--sub_sampling', type=int, default=1, help='Sub-sampling factor for frames')
     parser.add_argument('--img_height', type=int, default=512, help='Image height')
     parser.add_argument('--img_width', type=int, default=512, help='Image width')
+    parser.add_argument('--render_samples', type=int, default=16, help='Number of render samples (lower=faster, default=16)')
+    parser.add_argument('--render_engine', type=str, default='cycles', choices=['eevee', 'cycles'], help='Render engine: eevee (fast) or cycles (high quality)')
+    parser.add_argument('--use_gpu', action='store_true', help='Enable GPU rendering (works with both Eevee and Cycles)')
+    parser.add_argument('--legacy_mode', action='store_true', help='Use legacy rendering mode (slower, for comparison)')
     args = parser.parse_args(argv)
 
 
@@ -380,6 +526,10 @@ if __name__ == "__main__":
     print(f"[#] Camera radius: {args.cam_radius}", flush=True)
     print(f"[#] Follow bone: {args.follow_bone}", flush=True)
     print(f"[#] Image size: {args.img_width}x{args.img_height}", flush=True)
+    print(f"[#] Render engine: {args.render_engine}", flush=True)
+    print(f"[#] Render samples: {args.render_samples}", flush=True)
+    print(f"[#] GPU rendering: {args.use_gpu}", flush=True)
+    print(f"[#] Legacy mode: {args.legacy_mode}", flush=True)
     scene = bpy.context.scene
     scene.render.image_settings.file_format = 'PNG'
     for f in fbx:
@@ -398,4 +548,8 @@ if __name__ == "__main__":
             height=args.cam_height,
             start_motion_frame=args.start_motion_frame,
             sub_sampling=args.sub_sampling,
+            render_samples=args.render_samples,
+            use_gpu=args.use_gpu,
+            legacy_mode=args.legacy_mode,
+            render_engine=args.render_engine,
         )

@@ -882,7 +882,6 @@ class JointVAE(nn.Module):
         mask = rearrange(mask, "H W -> 1 1 1 H W")
         return mask
 
-
     def tiled_decode(self, hidden_states, device, tile_size, tile_stride):
         _, _, T, H, W = hidden_states.shape
         size_h, size_w = tile_size

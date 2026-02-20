@@ -11,7 +11,6 @@ from mylogger.logger import init_logger
 
 logger = init_logger("train_on_prep_dit_features.log")
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_dit_features_path", type=str, required=True, help="Path to the DiT features files.")
@@ -140,12 +139,10 @@ if __name__ == "__main__":
         val_kwargs = dict(check_val_every_n_epoch=args.check_val_every_n_epoch)
     trainer_kwargs.update(val_kwargs)
     
-
-    
     trainer = L.Trainer(
-        max_epochs=args.num_epochs, 
-        accelerator="cuda", 
-        devices=args.n_gpus, 
+        max_epochs=args.num_epochs,
+        accelerator="cuda",
+        devices=args.n_gpus,
         logger=wandb_logger,
         default_root_dir=args.output_path + "/lightning_logs",
         profiler="simple",
