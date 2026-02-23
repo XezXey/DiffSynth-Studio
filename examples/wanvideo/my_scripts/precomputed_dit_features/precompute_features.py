@@ -135,12 +135,12 @@ def main():
             f' --extra_inputs "{a.extra_inputs}"'
         )
         os.system(cmd)
-        exit()
-        if not run(cmd,
-                   description="Data Process – Precompute Latents",
-                   stage_num=stage, total_stages=total):
-            die("Stage 1 failed.")
-        stage += 1
+        # exit()
+        # if not run(cmd,
+        #            description="Data Process – Precompute Latents",
+        #            stage_num=stage, total_stages=total):
+        #     die("Stage 1 failed.")
+        # stage += 1
 
     # ── stage 2: data_process_with_wan ────────────────────────────────────────
     if a.mode in ("data_process_with_wan", "both"):
@@ -169,11 +169,10 @@ def main():
             f' --extra_inputs "{a.extra_inputs}"'
         )
         os.system(cmd)
-        exit()
-        if not run(cmd,
-                   description="Data Process with Wan – Precompute DIT Features",
-                   stage_num=stage, total_stages=total):
-            die("Stage 2 failed.")
+        # if not run(cmd,
+        #            description="Data Process with Wan – Precompute DIT Features",
+        #            stage_num=stage, total_stages=total):
+        #     die("Stage 2 failed.")
 
     # ── summary ───────────────────────────────────────────────────────────────
     rows = []
