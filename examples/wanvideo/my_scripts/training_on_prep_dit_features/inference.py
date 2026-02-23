@@ -1,10 +1,10 @@
 import numpy as np
 import torch as th
-import argparse
+import argparse, os, glob, plotly
 from model import JointVAE38, Head
 from einops import rearrange
-import glob
 from dataset import DitFeaturesDataset
+from diffsynth.diffusion.vis import MultiSkeleton2D3DAnimator
 from mylogger.logger import init_logger
 logger = init_logger("inference_on_prep_dit_features.log")
 
@@ -43,7 +43,6 @@ class SkelAg(th.nn.Module):
     def forward(self, batch):
         inputs = batch
         dit_features = inputs["dit_features"].squeeze(0)  # B, C, H, W
-        print("dit_features shape:", dit_features.shape)
         inp = dit_features.type(th.float32).cuda()  # 1, #tokens, C
         grid_size = inputs["grid_size"]
         patch_size = inputs["patch_size"]
@@ -87,28 +86,29 @@ class SkelAg(th.nn.Module):
         
         motion_pred_2d = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
         motion_pred_3d = self.unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
-        training_target_3d = m3d_gt
-        assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
-        assert motion_pred_2d.shape == m2d_gt.shape, f"motion_pred_2d shape {motion_pred_2d.shape} does not match gt_motion_2d shape {m2d_gt.shape}"
+        # training_target_3d = m3d_gt
+        # assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
+        # assert motion_pred_2d.shape == m2d_gt.shape, f"motion_pred_2d shape {motion_pred_2d.shape} does not match gt_motion_2d shape {m2d_gt.shape}"
 
-        loss_3d = th.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
-        loss_2d = th.nn.functional.mse_loss(motion_pred_2d.float(), m2d_gt.float()) * mask_2d.float()
-        loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
-        loss = loss_3d + loss_2d * 1000.0
+        # loss_3d = th.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
+        # loss_2d = th.nn.functional.mse_loss(motion_pred_2d.float(), m2d_gt.float()) * mask_2d.float()
+        # loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
+        # loss = loss_3d + loss_2d * 1000.0
 
         output_dict = {
             "motion_pred_3d": motion_pred_3d.detach().cpu(),
-            "motion_gt_3d": training_target_3d.detach().cpu(),
+            # "motion_gt_3d": training_target_3d.detach().cpu(),
             "motion_pred_2d": motion_pred_2d.detach().cpu(),
-            "motion_gt_2d": m2d_gt.detach().cpu(),
-            "loss_3d": loss_3d.item(),
-            "loss_2d": loss_2d.item(),
+            # "motion_gt_2d": m2d_gt.detach().cpu(),
+            # "loss_3d": loss_3d.item(),
+            # "loss_2d": loss_2d.item(),
             "joint_names": inputs["joint_names"],
             "bones": inputs["bones"]
         }
-        loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d}
+        # loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d}
 
-        return loss_dict, output_dict
+        # return loss_dict, output_dict
+        return None, output_dict
 
     def unpatchify(self, x, grid_size, patch_size):
         return rearrange(
@@ -291,9 +291,24 @@ if __name__ == "__main__":
 
     test_motion_dataset = DitFeaturesDataset(motion_to_infer, preferred_dit_block_id=args.preferred_dit_block_id)
     test_motion_dataloader = th.utils.data.DataLoader(test_motion_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=test_motion_dataset.collate_fn_, persistent_workers=True)
+    
+    motion2d_frames = []
+    motion3d_frames = []
+
     for data in test_motion_dataloader:
-        output = model(data)
-        print(output)
-        exit()
+        _, output = model(data)
+        motion2d_frames.append(output["motion_pred_2d"].detach().cpu())
+        motion3d_frames.append(output["motion_pred_3d"].detach().cpu())
+    
+    motion2d = th.cat(motion2d_frames, dim=0)  # (T, J, 2)
+    motion3d = th.cat(motion3d_frames, dim=0)  # (T, J, 3)
+    joint_names = output["joint_names"]
+    bones = output["bones"]
+    edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
+
+    anim = MultiSkeleton2D3DAnimator(fps=30, title=args.motion_name, y_axis_down=True)
+    # anim.add_sequence(motion3d, K2=motion2d, edges=edges, color="red", name="Prediction")
+    anim.add_sequence(motion3d, K2=motion2d, color="red", name="Prediction")
+    plotly.offline.plot(anim.fig, filename=f'./ggez.html', auto_open=False)
     exit()
 
