@@ -117,6 +117,14 @@ def die(msg: str) -> None:
         print(f"❌  {msg}", file=sys.stderr)
     sys.exit(1)
 
+def success(msg: str) -> None:
+    """Print *msg* as a bold-green success message."""
+    try:
+        from rich.console import Console
+        Console().print(f"[bold green]✅  {msg}[/bold green]")
+    except ImportError:
+        print(f"✅  {msg}")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Plain runner  (no rich / textual dependency)

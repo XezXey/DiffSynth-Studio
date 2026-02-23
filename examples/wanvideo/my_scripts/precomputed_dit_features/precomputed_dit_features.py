@@ -6,7 +6,7 @@ from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 from diffsynth.motion_models.joint_map_vae import JointHeatMapMotionUpsample
 from diffsynth.core.data.operators import LoadVideo, LoadAudio, ImageCropAndResize, ToAbsolutePath
 from diffsynth.diffusion import *
-from diffsynth.diffusion.mint_loss import TrainingOnDitFeaturesLoss, CachingDitFeatures
+from diffsynth.diffusion.mint_loss import CachingDitFeatures
 def seed_everything(seed: int):
     import random
     import numpy as np
@@ -90,31 +90,15 @@ class WanTrainingModule(DiffusionTrainingModule):
         # Use Wan models as frozen models
         self.force_no_grad()
 
-        if ":data_process" in task or ":data_process_with_wan" in task:
-            self.extra_modules = None
-        else:
-            vae_latent_dim = self.pipe.vae.z_dim if hasattr(self.pipe.vae, 'z_dim') else self.pipe.dit.out_dim
-            self.extra_modules = JointHeatMapMotionUpsample(
-                n_joints=n_joints,    #TODO: Fix this!!!
-                dit_dim=self.pipe.dit.dim,
-                head_out_dim=self.pipe.dit.out_dim,
-                vae_latent_dim=vae_latent_dim,
-                patch_size=self.pipe.dit.patch_size,
-                device=self.pipe.device
-            )
-
         # Training mode
         self.switch_pipe_to_training_mode(
             self.pipe,
             task=task,
         )
         self.pipe = self.pipe.to(device)
-        self.extra_modules = self.extra_modules.to(device) if self.extra_modules is not None else None
 
         self.task = task
         self.task_to_loss = {
-            "dit_features": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
-            "dit_features:train": lambda pipe, inputs_shared, inputs_posi, inputs_nega: TrainingOnDitFeaturesLoss(pipe, self.extra_modules, **inputs_shared, **inputs_posi),
             "dit_features:data_process": lambda pipe, *args: args,
             "dit_features:data_process_with_wan": lambda pipe, inputs_shared, inputs_posi, inputs_nega: CachingDitFeatures(pipe, **inputs_shared, **inputs_posi),
         }
@@ -316,8 +300,6 @@ if __name__ == "__main__":
     )
 
     launcher_map = {
-        "dit_features": launch_training_task_add_modules,
-        "dit_features:train": launch_training_task_add_modules,
         "dit_features:data_process": launch_data_process_task_add_modules,
         "dit_features:data_process_with_wan": launch_data_process_with_wan_task_add_modules,
     }

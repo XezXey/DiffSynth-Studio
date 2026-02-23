@@ -91,7 +91,9 @@ def launch_data_process_task_add_modules(
             with torch.no_grad():
                 folder = os.path.join(model_logger.output_path, str(accelerator.process_index))
                 os.makedirs(folder, exist_ok=True)
-                save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), f"{data_id}.pth")
+                motion_name = data['motion_name'] if 'motion_name' in data else f""
+                save_name = f"{data_id}_{motion_name}.pth" if motion_name != "" else f"{data_id}.pth"
+                save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), save_name)
                 data = model(data)
                 if data[1] == {}:
                     # Only return the processed data, Discard pred_dict
@@ -117,7 +119,9 @@ def launch_data_process_with_wan_task_add_modules(
             with torch.no_grad():
                 folder = os.path.join(model_logger.output_path, str(accelerator.process_index))
                 os.makedirs(folder, exist_ok=True)
-                save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), f"{data_id}.pth")
+                motion_name = data['motion_name'] if 'motion_name' in data else f""
+                save_name = f"{data_id}_{motion_name}.pth" if motion_name != "" else f"{data_id}.pth"
+                save_path = os.path.join(model_logger.output_path, str(accelerator.process_index), save_name)
                 if dataset.load_from_cache:
                     data = model({}, inputs=data)
                 else:

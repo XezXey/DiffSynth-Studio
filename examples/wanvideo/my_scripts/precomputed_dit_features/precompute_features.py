@@ -24,7 +24,7 @@ import sys
 # ── resolve utils/ regardless of working directory ────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from utils.display_common import die, print_config, print_summary, run_command_plain
+from utils.display_common import success, die, print_config, print_summary, run_command_plain
 
 
 # ── display backend selector ──────────────────────────────────────────────────
@@ -110,6 +110,8 @@ def main():
     a = p.parse_args()
     print_config(a)
 
+    stage1_done = False
+    stage2_done = False
     # ── stage 1: data_process ─────────────────────────────────────────────────
     if a.mode in ("data_process", "both"):
         cmd = (
@@ -135,6 +137,9 @@ def main():
         exit_code = os.WEXITSTATUS(status)
         if exit_code != 0:
             die("Stage 1 failed.")
+        else:
+            stage1_done = True
+            success("Stage 1 (VAE's latents precomputed) completed successfully.")
 
         # exit()
         # if not run(cmd,
@@ -173,14 +178,17 @@ def main():
         exit_code = os.WEXITSTATUS(status)
         if exit_code != 0:
             die("Stage 2 failed.")
+        else:
+            stage2_done = True
+            success("Stage 2 (DIT features precomputed) completed successfully.")
 
     # ── summary ───────────────────────────────────────────────────────────────
     rows = []
-    if a.mode in ("data_process", "both"):
-        rows.append(("Latents (stage 1)",      a.output_path))
-    if a.mode in ("data_process_with_wan", "both"):
+    if a.mode in ("data_process", "both") and stage1_done:
+        rows.append(("VAE's Latents (stage 1)",      a.output_path_vae))
+    if a.mode in ("data_process_with_wan", "both") and stage2_done:
         rows.append(("DIT features (stage 2)", a.output_path_wan))
-    print_summary(rows, title="✓  All stages completed")
+    print_summary(rows, title="[#] Precomputation Summary [#]")
 
 if __name__ == "__main__":
     main()

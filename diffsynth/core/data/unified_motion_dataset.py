@@ -104,6 +104,7 @@ class UnifiedMotionDataset(torch.utils.data.Dataset):
             data = self.cached_data_operator(data)
         else:
             data = self.data[data_id % len(self.data)].copy()
+            motion_name = data['video'].split('.')[0]  # Assuming the motion name is the video filename without extension
             for key in self.data_file_keys:
                 if key in data:
                     if key in self.special_operator_map:
@@ -113,6 +114,7 @@ class UnifiedMotionDataset(torch.utils.data.Dataset):
                             data[key] = self.motion_data_operator(data[key])
                         else:
                             data[key] = self.main_data_operator(data[key])
+            data['motion_name'] = motion_name
         return data
 
     def __len__(self):
