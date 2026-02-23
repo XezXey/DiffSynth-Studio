@@ -87,6 +87,9 @@ if __name__ == '__main__':
                 'cams_intr': motion['cams_intr'],  # Keep original intrinsics
                 'joint_names': motion['joint_names'],
                 'bones': motion['bones'],
+                'video_name': f'{video_base_name}_chunk{i}_video.mp4',
+                'chunk_id': i,
+                'frame_range': (s_f, e_f)
             }
             np.savez_compressed(chunk_motion_path, **arr)
             # Update metadata

@@ -1,5 +1,5 @@
 #!/bin/bash
-CUDA_VISIBLE_DEVICES=0 python examples/wanvideo/my_scripts/training_dits_features/train_Wan2.2-TI2V-5B_dits_features.py \
+CUDA_VISIBLE_DEVICES=0 python examples/wanvideo/my_scripts/precomputed_dit_features/precomputed_dit_features.py \
   --dataset_base_path /host/data2/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p_only_body_with_motion_data_5frames/ \
   --dataset_metadata_path /host/data2/mint/Motion_Dataset/Mixamo/rdy_mixamo_720p_only_body_with_motion_data_5frames/metadata_front_view_9frames.csv \
   --height 320 \
