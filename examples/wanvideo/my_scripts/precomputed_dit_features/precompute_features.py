@@ -134,6 +134,8 @@ def main():
             f' --offload_models "{a.offload_models}"'
             f' --extra_inputs "{a.extra_inputs}"'
         )
+        os.system(cmd)
+        exit()
         if not run(cmd,
                    description="Data Process – Precompute Latents",
                    stage_num=stage, total_stages=total):
@@ -147,16 +149,16 @@ def main():
         cmd = (
             f"CUDA_VISIBLE_DEVICES={a.gpu_id}"
             f" python examples/wanvideo/my_scripts/training_dits_features/train_Wan2.2-TI2V-5B_dits_features.py"
-            f" --dataset_base_path {a.output_path}"
+            f" --dataset_base_path {a.output_path_vae}"
             f" --height {a.height} --width {a.width}"
             f" --dataset_repeat {a.dataset_repeat_wan}"
             f' --model_id_with_origin_paths "{model}"'
             f' --tokenizer_path "{a.tokenizer_path}"'
-            f" --save_steps {a.save_steps_wan}"
+            f" --save_steps {a.save_steps}"
             f" --vis_steps {a.vis_steps}"
             f" --log_steps {a.log_steps}"
             f" --learning_rate {a.learning_rate}"
-            f" --num_epochs {a.num_epochs_wan}"
+            f" --num_epochs {a.num_epochs}"
             f' --task "dit_features:data_process_with_wan"'
             f' --output_path "{a.output_path_wan}"'
             f' --data_file_keys "{a.data_file_keys}"'
@@ -166,6 +168,8 @@ def main():
             f" --n_joints {a.n_joints}"
             f' --extra_inputs "{a.extra_inputs}"'
         )
+        os.system(cmd)
+        exit()
         if not run(cmd,
                    description="Data Process with Wan – Precompute DIT Features",
                    stage_num=stage, total_stages=total):

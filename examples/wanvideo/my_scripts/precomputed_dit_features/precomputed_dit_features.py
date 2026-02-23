@@ -63,7 +63,6 @@ class WanTrainingModule(DiffusionTrainingModule):
         task="sft",
         max_timestep_boundary=1.0,
         min_timestep_boundary=0.0,
-        multi_gpu=False,
     ):
         super().__init__()
         # Warning
@@ -109,12 +108,8 @@ class WanTrainingModule(DiffusionTrainingModule):
             self.pipe,
             task=task,
         )
-        if multi_gpu:
-            self.pipe = self.pipe.to("cuda:0")
-            self.extra_modules = self.extra_modules.to("cuda:1") if self.extra_modules is not None else None
-        else:
-            self.pipe = self.pipe.to(device)
-            self.extra_modules = self.extra_modules.to(device) if self.extra_modules is not None else None
+        self.pipe = self.pipe.to(device)
+        self.extra_modules = self.extra_modules.to(device) if self.extra_modules is not None else None
 
         self.task = task
         self.task_to_loss = {
@@ -210,7 +205,6 @@ if __name__ == "__main__":
     # Check #N of GPUs
     num_gpus = torch.cuda.device_count()
     print(f"Number of GPUs detected: {num_gpus}")
-    multi_gpu = num_gpus > 1
     if num_gpus == 2:
         print("2 GPUs detected. Put DiTs model on GPU 0 and other models on GPU 1.")
 
@@ -273,7 +267,6 @@ if __name__ == "__main__":
         min_timestep_boundary=args.min_timestep_boundary,
         preferred_dit_block_id=args.preferred_dit_block_id,
         preferred_timestep_id=args.preferred_timestep_id,
-        multi_gpu=multi_gpu,
     )
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
     if args.use_wandb:

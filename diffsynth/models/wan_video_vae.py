@@ -3,7 +3,12 @@ from einops import rearrange, repeat
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import sys
 from tqdm import tqdm
+# from tqdm.rich import tqdm
+
+# Disable tqdm progress bars when stdout/stderr is not a TTY (e.g. piped subprocess)
+_TQDM_DISABLE = not sys.stderr.isatty()
 
 CACHE_T = 2
 
@@ -1136,7 +1141,7 @@ class WanVideoVAE(nn.Module):
         weight = torch.zeros((1, 1, out_T, H * self.upsampling_factor, W * self.upsampling_factor), dtype=hidden_states.dtype, device=data_device)
         values = torch.zeros((1, 3, out_T, H * self.upsampling_factor, W * self.upsampling_factor), dtype=hidden_states.dtype, device=data_device)
 
-        for h, h_, w, w_ in tqdm(tasks, desc="VAE decoding"):
+        for h, h_, w, w_ in tqdm(tasks, desc="VAE decoding", leave=False, disable=_TQDM_DISABLE):
             hidden_states_batch = hidden_states[:, :, :, h:h_, w:w_].to(computation_device)
             hidden_states_batch = self.model.decode(hidden_states_batch, self.scale).to(data_device)
 
