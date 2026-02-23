@@ -130,7 +130,12 @@ def main():
             f' --offload_models "{a.offload_models}"'
             f' --extra_inputs "{a.extra_inputs}"'
         )
-        os.system(cmd)
+        # How can i check whether the command succeeded or failed when using os.system? I want to print an error message and exit if it failed.
+        status = os.system(cmd)
+        exit_code = os.WEXITSTATUS(status)
+        if exit_code != 0:
+            die("Stage 1 failed.")
+
         # exit()
         # if not run(cmd,
         #            description="Data Process – Precompute Latents",
@@ -164,7 +169,10 @@ def main():
             f" --n_joints {a.n_joints}"
             f' --extra_inputs "{a.extra_inputs}"'
         )
-        os.system(cmd)
+        status = os.system(cmd)
+        exit_code = os.WEXITSTATUS(status)
+        if exit_code != 0:
+            die("Stage 2 failed.")
 
     # ── summary ───────────────────────────────────────────────────────────────
     rows = []
@@ -173,7 +181,6 @@ def main():
     if a.mode in ("data_process_with_wan", "both"):
         rows.append(("DIT features (stage 2)", a.output_path_wan))
     print_summary(rows, title="✓  All stages completed")
-
 
 if __name__ == "__main__":
     main()

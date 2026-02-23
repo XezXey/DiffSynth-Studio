@@ -1,9 +1,11 @@
 import numpy as np
 import os, glob, argparse
+import pandas as pd
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_path', type=str, required=True)
 parser.add_argument('--output_path', type=str, required=True)
+# Whether to combine all characters into a single output folder (instead of one folder per character)
 args = parser.parse_args()
 
 if __name__ == "__main__":
@@ -14,3 +16,4 @@ if __name__ == "__main__":
         cmd = f"python gen_data_format.py --data_path \"{char}\" --output_path \"{os.path.join(args.output_path, char_name)}\""
         print(f"Running command: {cmd}")
         os.system(cmd)
+    

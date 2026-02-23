@@ -9,6 +9,7 @@
 #       video_1.mp4,"A person walking in the park"
 
 import os
+import json
 import tqdm
 import pandas as pd
 import glob
@@ -23,6 +24,18 @@ def vid_from_frames(input_path, output_video_path):
     cmd = f'ffmpeg -y -framerate 30 -i {input_path} -c:v libopenh264 -pix_fmt yuv420p {output_video_path}'
     # print(input_path, output_video_path)
     os.system(cmd + " > /dev/null 2>&1")
+
+def search_prompt(output_path, motion_name, cam_desc):
+    characters = ['mannequin', 'michelle', 'prisoner_b_styperek', 'vampire_a_lusth']
+    with open('./character_prompt_mapping.json', 'r') as f:
+        char_prompt_mapping = json.load(f)
+    for char in characters:
+        if char in output_path:
+            print(f"Found character '{char}' in path. Using corresponding prompt template.")
+            return char_prompt_mapping[char].replace('<motion_name>', motion_name).replace('<cam_desc>', cam_desc)
+        
+    # Default prompt if no character name is found in the path
+    return f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view. Static camera perspective, no zoom or panning."
 
 if __name__ == "__main__":
     data_path = args.data_path
@@ -65,16 +78,17 @@ if __name__ == "__main__":
             # Write metadata
             with open(os.path.join(output_path, 'metadata.csv'), 'a') as f:
                 cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
-                prompt = f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view. Static camera perspective, no zoom or panning."
+                prompt = search_prompt(output_path, motion_name, cam_desc)
+                
                 motion_file = f"{vid_name}_motion_data.npz"
                 vid_file = f"{vid_name}_render.mp4"
                 df_render = pd.concat([df_render, pd.DataFrame([[vid_file, motion_file, prompt]], columns=['video', 'motion', 'prompt'])], ignore_index=True)
             
     df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
-    df_single_motion = df_render[df_render['motion'].str.contains('Walking')]
-    df_single_motion.to_csv(os.path.join(output_path, 'metadata_single_motion.csv'), index=False)
-    df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam_0_motion_data.npz')]
-    df_single_sample.to_csv(os.path.join(output_path, 'metadata_single_sample.csv'), index=False)
+    # df_single_motion = df_render[df_render['motion'].str.contains('Walking')]
+    # df_single_motion.to_csv(os.path.join(output_path, 'metadata_single_motion.csv'), index=False)
+    # df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam_0_motion_data.npz')]
+    # df_single_sample.to_csv(os.path.join(output_path, 'metadata_single_sample.csv'), index=False)
     df_front_view = df_render[df_render['motion'].str.contains('cam_0')]
     df_front_view.to_csv(os.path.join(output_path, 'metadata_front_view.csv'), index=False)
     
