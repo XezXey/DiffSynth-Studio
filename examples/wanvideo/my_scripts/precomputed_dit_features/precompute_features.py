@@ -87,7 +87,7 @@ def main():
     p.add_argument("--log_steps",          type=int, default=50)
     p.add_argument("--n_joints",              type=int, default=25)
 
-    # ── stage-2 training knobs ────────────────────────────────────────────────
+    # ── stage-2 inference knobs ────────────────────────────────────────────────
     p.add_argument("--dataset_repeat_vae", type=int,   default=1, help="How many times to repeat the dataset for stage 1 (precompute latents).")
     p.add_argument("--dataset_repeat_wan", type=int, default=25, help="How many times to repeat the dataset for stage 2 (computed DIT features on #N different noise).")
     p.add_argument("--preferred_timestep_id", type=int, required=True)
@@ -109,10 +109,6 @@ def main():
 
     a = p.parse_args()
     print_config(a)
-
-    run = _get_runner(a.display)
-    total  = 2 if a.mode == "both" else 1
-    stage  = 1
 
     # ── stage 1: data_process ─────────────────────────────────────────────────
     if a.mode in ("data_process", "both"):
@@ -169,10 +165,6 @@ def main():
             f' --extra_inputs "{a.extra_inputs}"'
         )
         os.system(cmd)
-        # if not run(cmd,
-        #            description="Data Process with Wan – Precompute DIT Features",
-        #            stage_num=stage, total_stages=total):
-        #     die("Stage 2 failed.")
 
     # ── summary ───────────────────────────────────────────────────────────────
     rows = []
