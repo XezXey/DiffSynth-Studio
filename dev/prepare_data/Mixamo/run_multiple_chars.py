@@ -28,8 +28,8 @@ parser.add_argument('--cam_height', type=float, default=3.0, help='Camera height
 parser.add_argument('--cam_radius', type=float, default=4.5, help='Radius of camera circle around the character')
 parser.add_argument('--img_width', type=int, default=1280, help='Image width')
 parser.add_argument('--img_height', type=int, default=720, help='Image height')
-parser.add_argument('--run_blender', action='store_true', help='Enable blender execution')
-parser.add_argument('--run_projection', action='store_true', help='Enable 2D projection after rendering')
+parser.add_argument('--run_blender', action='store_true', default=False, help='Enable blender execution')
+parser.add_argument('--run_projection', action='store_true', default=False, help='Enable 2D projection after rendering')
 parser.add_argument('--use_gpu', action='store_true', default=False, help='Use GPU for rendering in Blender')
 parser.add_argument('--only_body_joints', action='store_true', default=False, help='Only render body joints without the fingers')
 parser.add_argument('--skip_plot_map', action='store_true', default=False, help='Skip plotting the 2D joint heatmap and skeleton overlay on the rendered images')
@@ -77,8 +77,9 @@ def run_with_rich_ui(character_dirs):
                 blender_cmd += " --use_gpu" if args.use_gpu else ""
                 blender_cmd += " --run_blender" if args.run_blender else ""
                 blender_cmd += " --run_projection" if args.run_projection else ""
+                blender_cmd += " --only_body_joints" if args.only_body_joints else ""
+                blender_cmd += " --skip_plot_map" if args.skip_plot_map else ""
                 print(f"Command: {blender_cmd}\n")
-                
                 # Update main progress
                 progress.update(
                     main_task, 

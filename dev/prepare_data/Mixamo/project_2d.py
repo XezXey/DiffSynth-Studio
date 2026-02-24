@@ -133,22 +133,35 @@ def process(path):
     # print(len(data['bones']))
     # print(len(data['joint_names']))
     if args.only_body_joints:
-        #NOTE: Currently only for Mixamo skeleton names, need to be modified for other datasets later...
-        exlcude_joint_names = [
-            'mixamorig:LeftHandThumb1', 'mixamorig:LeftHandThumb2', 'mixamorig:LeftHandThumb3', 'mixamorig:LeftHandThumb4', 'mixamorig:LeftHandIndex1', 'mixamorig:LeftHandIndex2', 'mixamorig:LeftHandIndex3', 'mixamorig:LeftHandIndex4', 'mixamorig:LeftHandMiddle1', 'mixamorig:LeftHandMiddle2', 'mixamorig:LeftHandMiddle3', 'mixamorig:LeftHandMiddle4', 'mixamorig:LeftHandRing1', 'mixamorig:LeftHandRing2', 'mixamorig:LeftHandRing3', 'mixamorig:LeftHandRing4', 'mixamorig:LeftHandPinky1', 'mixamorig:LeftHandPinky2', 'mixamorig:LeftHandPinky3', 'mixamorig:LeftHandPinky4',
-            'mixamorig:RightHandThumb1', 'mixamorig:RightHandThumb2', 'mixamorig:RightHandThumb3', 'mixamorig:RightHandThumb4', 'mixamorig:RightHandIndex1', 'mixamorig:RightHandIndex2', 'mixamorig:RightHandIndex3', 'mixamorig:RightHandIndex4', 'mixamorig:RightHandMiddle1', 'mixamorig:RightHandMiddle2', 'mixamorig:RightHandMiddle3', 'mixamorig:RightHandMiddle4', 'mixamorig:RightHandRing1', 'mixamorig:RightHandRing2', 'mixamorig:RightHandRing3', 'mixamorig:RightHandRing4', 'mixamorig:RightHandPinky1', 'mixamorig:RightHandPinky2', 'mixamorig:RightHandPinky3', 'mixamorig:RightHandPinky4',
-        ]
-        exclude_indices = [data["joint_names"].index(name) for name in exlcude_joint_names if name in data["joint_names"]]
-        j3d = np.delete(j3d, exclude_indices, axis=1)
+        #NOTE: Currently only for Mixamo skeleton names from "Michelle", need to be modified for other datasets later...
+        base_joints = ['mixamorig:Hips', 'mixamorig:Spine', 'mixamorig:Spine1', 'mixamorig:Spine2',
+            'mixamorig:Neck', 'mixamorig:Head', 'mixamorig:HeadTop_End',
+            'mixamorig:LeftShoulder', 'mixamorig:LeftArm', 'mixamorig:LeftForeArm',
+            'mixamorig:LeftHand', 'mixamorig:RightShoulder', 'mixamorig:RightArm',
+            'mixamorig:RightForeArm', 'mixamorig:RightHand', 'mixamorig:LeftUpLeg',
+            'mixamorig:LeftLeg', 'mixamorig:LeftFoot', 'mixamorig:LeftToeBase',
+            'mixamorig:LeftToe_End', 'mixamorig:RightUpLeg', 'mixamorig:RightLeg',
+            'mixamorig:RightFoot', 'mixamorig:RightToeBase', 'mixamorig:RightToe_End']
+        
+        base_parts = [x.split(":")[-1].lower() for x in base_joints]
+        input_joint_names = [name.split(":")[-1].lower() for name in data["joint_names"]]
+
+        body_joint_indices = [input_joint_names.index(part) for part in base_parts]
+        j3d = j3d[:, body_joint_indices, :]
         # Also remove bones involving these joints
         new_bones = []
         for start_name, end_name in data["bones"]:
-            if start_name in exlcude_joint_names or end_name in exlcude_joint_names:
-                continue
-            new_bones.append((start_name, end_name))
+            if start_name.split(":")[-1].lower() in base_parts and end_name.split(":")[-1].lower() in base_parts:
+                new_bones.append((start_name, end_name))
         data["bones"] = new_bones
         # Also update joint_names
-        data["joint_names"] = [name for name in data["joint_names"] if name not in exlcude_joint_names]
+        data["joint_names"] = [data["joint_names"][i] for i in body_joint_indices]
+        print("== Filtered to body joints only ==")
+        print(f"Remaining {len(data['joint_names'])} joints: {data['joint_names']}")
+        print("="*50)
+        print(f"Remaining {len(data['bones'])} bones: {data['bones']}")
+        print("="*50)
+        # exit()
     else:
         pass
         
