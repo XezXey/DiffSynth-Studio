@@ -9,10 +9,12 @@ Exports
     print_summary(rows, title)    pretty-print a completion summary table
     die(msg)                      print an error message and sys.exit(1)
     run_command_plain(...)        bare-bones subprocess runner, no formatting
+    run_plain_batch(tasks)        run a list of (label, cmd) pairs, plain output
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -172,3 +174,37 @@ def run_command_plain(
     print(f"[{ts}]  {'✓  Done' if ok else f'✗  Failed (exit {proc.returncode})'}  –  {description}")
     print(f"{sep}\n")
     return ok
+
+
+def run_plain_batch(
+    tasks: list[tuple[str, str]],
+) -> list[bool]:
+    """
+    Run a list of (label, command) pairs sequentially with plain output.
+    Plain fallback for environments without rich.
+
+    Parameters
+    ----------
+    tasks : list of (label, command) tuples
+
+    Returns
+    -------
+    list[bool] — True if exit code 0, one entry per task.
+    """
+    total   = len(tasks)
+    results = []
+    for idx, (label, command) in enumerate(tasks, 1):
+        ok = run_command_plain(
+            command,
+            description  = label,
+            stage_num    = idx,
+            total_stages = total,
+        )
+        results.append(ok)
+
+    sep = "=" * 60
+    passed = sum(results)
+    print(f"\n{sep}")
+    print(f"Done: {passed}/{total} succeeded, {total - passed} failed.")
+    print(f"{sep}\n")
+    return results

@@ -3,14 +3,13 @@ display_rich.py  –  Run a shell command and display its output using rich.
 
 Public API
 ----------
-    from utils.display_rich import run_command
+    from utils.display_rich import run_command, run_batch
 
-    ok = run_command(
-        command      = "python train.py",
-        description  = "Training",
-        stage_num    = 1,
-        total_stages = 2,
-    )  # -> bool
+    # single stage
+    ok = run_command(command, description, stage_num, total_stages)  # -> bool
+
+    # batch of tasks
+    results = run_batch(tasks, overall_description, max_log_lines)   # -> list[bool]
 
 Behaviour
 ---------
@@ -158,3 +157,94 @@ def run_command(
     ))
     _con.print()
     return False
+
+
+# ── batch runner ──────────────────────────────────────────────────────────────
+
+def run_batch(
+    tasks: list[tuple[str, str]],
+    overall_description: str = "Processing...",
+    max_log_lines: int = 20,
+) -> list[bool]:
+    """
+    Run a list of (label, command) pairs sequentially.
+
+    Shows an overall rich Progress bar across all tasks, plus a Live
+    rolling-window panel for each running subprocess.
+
+    Parameters
+    ----------
+    tasks                : list of (label, command) tuples
+    overall_description  : label shown in the overall progress bar
+    max_log_lines        : rolling window size for subprocess output
+
+    Returns
+    -------
+    list[bool] — True if exit code == 0, one entry per task.
+    """
+    from rich.progress import (
+        BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn,
+    )
+
+    total   = len(tasks)
+    results = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=_con,
+    ) as progress:
+        overall = progress.add_task(f"[cyan]{overall_description}", total=total)
+
+        for idx, (label, command) in enumerate(tasks, 1):
+            _con.print(f"\n[bold cyan]→[/bold cyan]  [{idx}/{total}]: {label}")
+            progress.update(overall, description=f"[cyan][{idx}/{total}]: {label}")
+
+            short = command[:160] + "…" if len(command) > 160 else command
+            _con.print(f"[dim]CMD:[/dim] [yellow]{short}[/yellow]\n")
+
+            buf = deque(maxlen=max_log_lines)
+
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+            )
+
+            with Live(console=_con, refresh_per_second=REFRESH_RATE) as live:
+                try:
+                    for raw in proc.stdout:
+                        line = raw.rstrip()
+                        if line:
+                            buf.append(line)
+                            live.update(Panel(
+                                "\n".join(_highlight(l) for l in buf),
+                                title=f"[bold green]{label}[/bold green]",
+                                subtitle=f"[dim]last {len(buf)} lines[/dim]",
+                                border_style="blue",
+                            ))
+                except KeyboardInterrupt:
+                    _con.print("\n[bold red]⚠  Interrupted by user[/bold red]")
+                    proc.terminate()
+                    results.append(False)
+                    progress.advance(overall)
+                    continue
+
+            proc.wait()
+            ok = proc.returncode == 0
+            if ok:
+                _con.print(f"[green]✓[/green]  Completed: {label}")
+            else:
+                _con.print(f"[red]✗[/red]  Failed: {label} (exit code: {proc.returncode})")
+            results.append(ok)
+            progress.advance(overall)
+
+    passed = sum(results)
+    _con.print(f"\n[bold green]Done:[/bold green] {passed}/{total} succeeded, "
+               f"[bold red]{total - passed}[/bold red] failed.\n")
+    return results

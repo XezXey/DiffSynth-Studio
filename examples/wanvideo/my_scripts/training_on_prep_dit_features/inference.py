@@ -67,8 +67,8 @@ class SkelAg(th.nn.Module):
         E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
         # print(th.is_tensor(E_bl), E_bl.shape, E_bl.dtype, E_bl.ndim)
 
-        m3d_gt = inputs["joints_3d"].squeeze(0)  # T, J, 3
-        m2d_gt = inputs["joints_2d"].squeeze(0)  # T, J, 3
+        m3d_gt = inputs["joints_3d"].squeeze(0).cuda()  # T, J, 3
+        m2d_gt = inputs["joints_2d"].squeeze(0).cuda()  # T, J, 3
         m2d_gt = m2d_gt[..., :2]    # only keep (u, v)
         assert m3d_gt.shape[0] == m2d_gt.shape[0], "Number of frames mismatch between 3D and 2D joints."
         assert m3d_gt.shape[1] == m2d_gt.shape[1], "Number of joints mismatch between 3D and 2D joints."
@@ -86,22 +86,22 @@ class SkelAg(th.nn.Module):
         
         motion_pred_2d = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
         motion_pred_3d = self.unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
-        # training_target_3d = m3d_gt
-        # assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
-        # assert motion_pred_2d.shape == m2d_gt.shape, f"motion_pred_2d shape {motion_pred_2d.shape} does not match gt_motion_2d shape {m2d_gt.shape}"
+        training_target_3d = m3d_gt
+        assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
+        assert motion_pred_2d.shape == m2d_gt.shape, f"motion_pred_2d shape {motion_pred_2d.shape} does not match gt_motion_2d shape {m2d_gt.shape}"
 
-        # loss_3d = th.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
-        # loss_2d = th.nn.functional.mse_loss(motion_pred_2d.float(), m2d_gt.float()) * mask_2d.float()
-        # loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
-        # loss = loss_3d + loss_2d * 1000.0
+        loss_3d = th.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
+        loss_2d = th.nn.functional.mse_loss(motion_pred_2d.float(), m2d_gt.float()) * mask_2d.float()
+        loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
+        loss = loss_3d + loss_2d * 1000.0
 
         output_dict = {
             "motion_pred_3d": motion_pred_3d.detach().cpu(),
-            # "motion_gt_3d": training_target_3d.detach().cpu(),
+            "motion_gt_3d": training_target_3d.detach().cpu(),
             "motion_pred_2d": motion_pred_2d.detach().cpu(),
-            # "motion_gt_2d": m2d_gt.detach().cpu(),
-            # "loss_3d": loss_3d.item(),
-            # "loss_2d": loss_2d.item(),
+            "motion_gt_2d": m2d_gt.detach().cpu(),
+            "loss_3d": loss_3d.item(),
+            "loss_2d": loss_2d.item(),
             "joint_names": inputs["joint_names"],
             "bones": inputs["bones"]
         }
@@ -294,21 +294,28 @@ if __name__ == "__main__":
     
     motion2d_frames = []
     motion3d_frames = []
+    gt_motion2d_frames = []
+    gt_motion3d_frames = []
 
     for data in test_motion_dataloader:
         _, output = model(data)
         motion2d_frames.append(output["motion_pred_2d"].detach().cpu())
         motion3d_frames.append(output["motion_pred_3d"].detach().cpu())
+        gt_motion2d_frames.append(output["motion_gt_2d"].detach().cpu())
+        gt_motion3d_frames.append(output["motion_gt_3d"].detach().cpu())
     
     motion2d = th.cat(motion2d_frames, dim=0)  # (T, J, 2)
     motion3d = th.cat(motion3d_frames, dim=0)  # (T, J, 3)
+    gt_motion2d = th.cat(gt_motion2d_frames, dim=0)  # (T, J, 2)
+    gt_motion3d = th.cat(gt_motion3d_frames, dim=0)  # (T, J, 3)
     joint_names = output["joint_names"]
     bones = output["bones"]
     edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
 
     anim = MultiSkeleton2D3DAnimator(fps=30, title=args.motion_name, y_axis_down=True)
-    # anim.add_sequence(motion3d, K2=motion2d, edges=edges, color="red", name="Prediction")
-    anim.add_sequence(motion3d, K2=motion2d, color="red", name="Prediction")
+    anim.add_sequence(motion3d, K2=motion2d, edges=edges, color="red", name="Prediction")
+    anim.add_sequence(gt_motion3d, K2=gt_motion2d, edges=edges, color="blue", name="Ground Truth")
+    # anim.add_sequence(motion3d, K2=motion2d, color="red", name="Prediction")
     plotly.offline.plot(anim.fig, filename=f'./ggez.html', auto_open=False)
     exit()
 
