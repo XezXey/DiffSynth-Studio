@@ -315,7 +315,5 @@ if __name__ == "__main__":
     anim = MultiSkeleton2D3DAnimator(fps=30, title=args.motion_name, y_axis_down=True)
     anim.add_sequence(motion3d, K2=motion2d, edges=edges, color="red", name="Prediction")
     anim.add_sequence(gt_motion3d, K2=gt_motion2d, edges=edges, color="blue", name="Ground Truth")
-    # anim.add_sequence(motion3d, K2=motion2d, color="red", name="Prediction")
     plotly.offline.plot(anim.fig, filename=f'./ggez.html', auto_open=False)
-    exit()
 
