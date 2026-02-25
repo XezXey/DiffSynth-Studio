@@ -153,9 +153,12 @@ class TrainOnDiTFeatures(L.LightningModule):
         w = inputs["width"]
         u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
         v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
-        d = depth[..., 0]
-        print(depth.shape)
-        exit()
+        d = depth[..., 0]   # B, J, T, 1
+        if self.predict_motion_dt:
+            print("dt mode")
+            d = th.cumsum(d, dim=2)  # convert from motion delta to absolute motion, assume first timestep would be the absolute motion
+        else: 
+            d = d
         
         motion_pred_2d = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
         motion_pred_3d = self.unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
