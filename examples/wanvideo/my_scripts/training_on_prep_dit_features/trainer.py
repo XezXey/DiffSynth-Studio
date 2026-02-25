@@ -155,7 +155,6 @@ class TrainOnDiTFeatures(L.LightningModule):
         v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
         d = depth[..., 0]   # B, J, T, 1
         if self.predict_motion_dt:
-            print("dt mode")
             d = th.cumsum(d, dim=2)  # convert from motion delta to absolute motion, assume first timestep would be the absolute motion
         else: 
             d = d
