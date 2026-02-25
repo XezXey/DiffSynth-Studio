@@ -66,6 +66,7 @@ if __name__ == "__main__":
     logger.warning("Motion parameters:")
     logger.info(f"J: {args.J}")
     logger.info(f"out_J_chn: {args.out_J_chn}")
+    logger.info(f"predict_motion_dt: {args.predict_motion_dt}")
 
     logger.warning("Dataset:")
     logger.info(f"train_dit_features_path: {args.train_dit_features_path}")
