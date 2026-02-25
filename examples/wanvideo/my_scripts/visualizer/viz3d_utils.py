@@ -672,7 +672,7 @@ def visualize_sample(
     joint_set: str = "smpl22",
     pred_color: str = PRED_COLOR,
     gt_color: str = GT_COLOR,
-    cell_height: int = 360,
+    cell_height: int = 720,
 ) -> str:
     """Convenience wrapper: build a single-row HTML for one sample.
 

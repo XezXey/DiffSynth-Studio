@@ -47,6 +47,8 @@ def _parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # paths
+    p.add_argument("--blender_path", default="/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender", type=str,
+                   help="Path to Blender executable.")
     p.add_argument("--input_dir",  required=True,
                    help="Directory containing character subdirectories with FBX files.")
     p.add_argument("--output_dir", required=True,
@@ -61,15 +63,15 @@ def _parse_args():
     p.add_argument("--img_width",   type=int,   default=1280)
     p.add_argument("--img_height",  type=int,   default=720)
     # flags
-    p.add_argument("--run_blender",       action="store_true",
+    p.add_argument("--run_blender",       action="store_true", default=False,
                    help="Enable Blender execution.")
-    p.add_argument("--run_projection",    action="store_true",
+    p.add_argument("--run_projection",    action="store_true", default=False,
                    help="Enable 2-D projection after rendering.")
-    p.add_argument("--use_gpu",           action="store_true",
+    p.add_argument("--use_gpu",           action="store_true", default=False,
                    help="Use GPU for Blender rendering.")
-    p.add_argument("--only_body_joints",  action="store_true",
+    p.add_argument("--only_body_joints",  action="store_true", default=False,
                    help="Render body joints only (no fingers).")
-    p.add_argument("--skip_plot_map",     action="store_true",
+    p.add_argument("--skip_plot_map",     action="store_true", default=False,
                    help="Skip 2-D joint heatmap / skeleton overlay plotting.")
     return p.parse_args()
 
@@ -87,6 +89,7 @@ def _build_command(motion_file: str, char_output_dir: str, args) -> str:
         f" --cam_radius {args.cam_radius}"
         f" --img_width {args.img_width}"
         f" --img_height {args.img_height}"
+        f" --blender_path \"{args.blender_path}\""
     )
     cmd = f'python run.py --fbx "{motion_file}" --out_dir "{char_output_dir}" {render}'
     if args.use_gpu:          cmd += " --use_gpu"

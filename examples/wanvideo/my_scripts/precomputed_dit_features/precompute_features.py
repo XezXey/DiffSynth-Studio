@@ -126,6 +126,7 @@ def main():
             f" --save_steps {a.save_steps}"
             f" --learning_rate {a.learning_rate}"
             f" --num_epochs {a.num_epochs}"
+            f" --num_frames {a.num_frames}"
             f' --task "dit_features:data_process"'
             f' --output_path "{a.output_path_vae}"'
             f' --data_file_keys "{a.data_file_keys}"'
@@ -172,7 +173,9 @@ def main():
             f' --fp8_models "{a.fp8_models}"'
             f" --preferred_timestep_id={a.preferred_timestep_id}"
             f" --n_joints {a.n_joints}"
+            f" --num_frames {a.num_frames}"
             f' --extra_inputs "{a.extra_inputs}"'
+
         )
         status = os.system(cmd)
         exit_code = os.WEXITSTATUS(status)

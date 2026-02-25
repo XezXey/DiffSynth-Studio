@@ -33,6 +33,7 @@ if __name__ == "__main__":
     parser.add_argument("--check_val_every_n_epoch", type=int, default=5, help="Run validation every N epochs.")
     parser.add_argument("--force_check_val_loop", action="store_true", default=False, help="Force validation loop to run every epoch for sanity check.")
     parser.add_argument("--overfit_single_batch", action="store_true", default=False, help="Overfit on a single batch to verify code correctness.")
+    parser.add_argument("--predict_motion_dt", action="store_true", default=False, help="Whether to predict motion delta (current frame to next frame) instead of absolute motion.")
     args = parser.parse_args()
 
     dit_features_path_list = glob.glob(f"{args.train_dit_features_path}/*.pth")
@@ -116,6 +117,7 @@ if __name__ == "__main__":
         vis_steps=args.vis_steps,
         save_steps=args.save_steps,
         logger=wandb_logger,
+        predict_motion_dt=args.predict_motion_dt,
     )
 
     trainer_kwargs = dict(

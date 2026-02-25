@@ -22,6 +22,7 @@ class TrainOnDiTFeatures(L.LightningModule):
             vis_steps,
             save_steps,
             logger,
+            predict_motion_dt=False,
             eps=1e-8, 
             num_res_blocks=0, 
             lr=1e-4,
@@ -38,6 +39,8 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.log_dir = log_dir
         self.wandb_logger = logger
         self.save_steps = save_steps
+        self.predict_motion_dt = predict_motion_dt
+        
 
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
@@ -151,6 +154,8 @@ class TrainOnDiTFeatures(L.LightningModule):
         u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
         v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
         d = depth[..., 0]
+        print(depth.shape)
+        exit()
         
         motion_pred_2d = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
         motion_pred_3d = self.unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))

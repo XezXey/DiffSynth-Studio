@@ -83,7 +83,7 @@ header span { font-size:11px; color:var(--muted); font-family:'Space Mono',monos
 <body>
 <header>
   <h1>&#11835; viz3d demo</h1>
-  <span>3 sample(s) · 2026-02-25 09:37</span>
+  <span>3 sample(s) · 2026-02-25 10:58</span>
 </header>
 <div class="legend"><div class="legend-item"><div class="dot" style="background:#4ECDC4"></div>pred</div><div class="legend-item"><div class="dot" style="background:#FF6B6B"></div>gt</div></div>
 <main id="main-content">
@@ -194,7 +194,7 @@ function buildFloor(scene){
   var mesh=new THREE.Mesh(g,mat); mesh.receiveShadow=true; scene.add(mesh);
   if(THREE.Reflector){
     var mg=new THREE.PlaneGeometry(N*P,N*P);
-    var mir=new THREE.Reflector(mg,{clipBias:0.003,textureWidth:512,textureHeight:512,color:0x222244});
+    var mir=new THREE.Reflector(mg,{clipBias:0.003,textureWidth:512,textureHeight:512,color:0xffffff});
     mir.rotateX(-Math.PI/2); mir.position.y=-0.001; scene.add(mir);
   }
 }
