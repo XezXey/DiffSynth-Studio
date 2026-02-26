@@ -73,6 +73,7 @@ import numpy as np
 from io import BytesIO
 from pathlib import Path
 from typing import Optional, Any
+from PIL import Image
 
 # ── Skeleton topology ─────────────────────────────────────────────────────────
 SMPL22_EDGES = [
@@ -132,6 +133,7 @@ def panel_3d(
     gt_color:   str = GT_COLOR,
     label: str = "",
     skeletons: Optional[list] = None,  # New simplified API
+    edges: Optional[list] = None,       # e.g. [[0,1],[1,2],...] overrides global joint_set
 ) -> dict:
     """
     3-D Three.js skeleton panel.
@@ -160,7 +162,10 @@ def panel_3d(
             for s in extra_skeletons:
                 skels.append({"joints": np.asarray(s["joints"]).tolist(),
                               "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
-    return {"type": "3d", "skeletons": skels, "label": label}
+    out: dict = {"type": "3d", "skeletons": skels, "label": label}
+    if edges is not None:
+        out["edges"] = edges
+    return out
 
 def panel_2d(
     pred: np.ndarray,
@@ -170,6 +175,7 @@ def panel_2d(
     gt_color:   str = GT_COLOR,
     label: str = "",
     skeletons: Optional[list] = None,  # New simplified API
+    edges: Optional[list] = None,       # e.g. [[0,1],[1,2],...] overrides global joint_set
 ) -> dict:
     """
     2-D canvas skeleton panel.
@@ -193,7 +199,10 @@ def panel_2d(
             for s in extra_skeletons:
                 skels.append({"joints": np.asarray(s["joints"]).tolist(),
                               "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
-    return {"type": "2d", "skeletons": skels, "label": label}
+    out: dict = {"type": "2d", "skeletons": skels, "label": label}
+    if edges is not None:
+        out["edges"] = edges
+    return out
 
 def panel_image_overlay(
     images:        list,
@@ -203,6 +212,7 @@ def panel_image_overlay(
     gt_color:      str = GT_COLOR,
     label:         str = "",
     image_quality: int = 75,
+    edges:         Optional[list] = None,  # e.g. [[0,1],[1,2],...] overrides global joint_set
 ) -> dict:
     """
     Image + 2-D skeleton overlay panel.
@@ -223,7 +233,10 @@ def panel_image_overlay(
         skels.append({"joints": np.asarray(joints).tolist(), "color": joint_color, "label": "pred"})
     if joints_gt is not None:
         skels.append({"joints": np.asarray(joints_gt).tolist(), "color": gt_color, "label": "gt"})
-    return {"type": "image_overlay", "images": encoded, "skeletons": skels, "label": label}
+    out: dict = {"type": "image_overlay", "images": encoded, "skeletons": skels, "label": label}
+    if edges is not None:
+        out["edges"] = edges
+    return out
 
 
 # ── Embedded CSS ─────────────────────────────────────────────────────────────
@@ -383,8 +396,8 @@ function buildLights(scene){
 }
 
 // ── 2-D drawing helper ────────────────────────────────────────────────────────
+// NOTE: does NOT clear – callers are responsible for clearing/filling first.
 function draw2D(ctx,W,H,items,edges){
-  ctx.clearRect(0,0,W,H);
   for(var _i=0;_i<items.length;_i++){
     var s=items[_i];
     ctx.strokeStyle=s.color+'88'; ctx.lineWidth=2;
@@ -414,7 +427,7 @@ function init3DPanel(cell,pd){
   orb.target.set(0,0.5,0); orb.enableDamping=true; orb.dampingFactor=0.08;
   orb.minDistance=0.5; orb.maxDistance=20; orb.update();
   buildLights(scene); buildFloor(scene); scene.add(new THREE.AxesHelper(0.35));
-  var edges=EDGES;
+  var edges=pd.edges||EDGES;
   var ns=normSkels3D(pd.skeletons); var J=ns[0].normed[0].length;
   var objs=ns.map(function(sk){
     var col=new THREE.Color(sk.color);
@@ -462,9 +475,11 @@ function init2DPanel(cell,pd){
   var ctx=cv.getContext('2d');
   var ns=normSkels2D(pd.skeletons,W,H);
   var objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
+  var edges2d=pd.edges||EDGES;
   function setFrame(f){
+    ctx.clearRect(0,0,cv.width,cv.height);  // clear before drawing skeleton
     var items=objs.filter(function(o){return o.visible;}).map(function(o){return{color:o.color,pts:o.normed[f]};});
-    draw2D(ctx,cv.width,cv.height,items,EDGES);
+    draw2D(ctx,cv.width,cv.height,items,edges2d);
   }
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
   function resize(w,h){
@@ -484,20 +499,30 @@ function initImageOverlayPanel(cell,pd){
   cv.width=W; cv.height=H;
   var ctx=cv.getContext('2d');
   var T=pd.images.length;
-  var imgs=pd.images.map(function(src){var i=new Image();i.src=src;return i;});
+  var lastFrame=0;
+  // Attach onload BEFORE setting src so it fires even for fast/cached loads
+  var imgs=pd.images.map(function(src){
+    var i=new Image();
+    i.onload=function(){draw(lastFrame);};
+    i.src=src;
+    return i;
+  });
   var ns=pd.skeletons.length?normSkels2D(pd.skeletons,W,H):[];
   var objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
+  var edgesOv=pd.edges||EDGES;
   function draw(f){
-    var cW=cv.width,cH=cv.height; ctx.clearRect(0,0,cW,cH);
+    lastFrame=f;
+    var cW=cv.width,cH=cv.height;
+    ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,cW,cH);  // always paint background first
     var img=imgs[f%T];
     if(img.complete&&img.naturalWidth){
       var sc=Math.min(cW/img.naturalWidth,cH/img.naturalHeight);
       var dw=img.naturalWidth*sc,dh=img.naturalHeight*sc;
       ctx.drawImage(img,(cW-dw)/2,(cH-dh)/2,dw,dh);
-    } else { img.onload=function(){draw(f);}; ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,cW,cH); }
+    }
     if(objs.length){
       var items=objs.filter(function(o){return o.visible;}).map(function(o){return{color:o.color,pts:o.normed[f]};});
-      draw2D(ctx,cW,cH,items,EDGES);
+      draw2D(ctx,cW,cH,items,edgesOv);
     }
   }
   function setFrame(f){draw(f);}
@@ -897,7 +922,10 @@ if __name__ == "__main__":
     pred2 = _demo_skeleton(T=args.T, seed=2)
 
     print("[demo] generating image data …")
-    imgs = _demo_images(T=args.T)
+    # imgs = _demo_images(T=args.T)
+    imgs = [Image.open('./moke.jpg').convert('RGB')] * args.T  # Replace with actual images if available
+    # print(imgs)
+    # exit()
 
     # 3 rows
     rows = [

@@ -17,6 +17,7 @@ parser.add_argument('--gpu_id', type=int, default=0)
 parser.add_argument('--motion_name', type=str, default=None)
 parser.add_argument("--J", type=int, default=25, help="Number of joints.")
 parser.add_argument("--out_J_chn", type=int, default=2, help="Output channels for each joint.")
+parser.add_argument("--predict_motion_dt", action='store_true', help="Whether the model predicts motion delta (True) or absolute motion (False). If True, the depth output will be treated as motion delta and converted to absolute motion by cumulative summation over time.")
 parser.add_argument("--preferred_dit_block_id", type=int, default=-1, help="Preferred DiT block ID.")
 args = parser.parse_args()
 
@@ -28,6 +29,7 @@ class SkelAg(th.nn.Module):
                 J,
                 out_J_chn,
                 num_res_blocks=0,
+                predict_motion_dt=False,
                 eps=1e-8):
         super().__init__()
         self.dim = dim
@@ -35,6 +37,7 @@ class SkelAg(th.nn.Module):
         self.patch_size = patch_size
         self.J = J
         self.out_J_chn = out_J_chn
+        self.predict_motion_dt = predict_motion_dt
 
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).eval()
         self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).eval()
@@ -83,6 +86,10 @@ class SkelAg(th.nn.Module):
         u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
         v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
         d = depth[..., 0]
+        if self.predict_motion_dt:
+            d = th.cumsum(d, dim=2)  # convert from motion delta to absolute motion, assume first timestep would be the absolute motion
+        else: 
+            d = d
         
         motion_pred_2d = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
         motion_pred_3d = self.unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
@@ -249,11 +256,18 @@ def sorted_by_chunk_id(file_list):
 
 if __name__ == "__main__":
     # Get params from the sample data
-    dit_features_path_list = glob.glob(f"{args.dit_features_path}/*.pth")
-    test_dataset = DitFeaturesDataset(dit_features_path_list, preferred_dit_block_id=args.preferred_dit_block_id)
-    test_dataloader = th.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=test_dataset.collate_fn_, persistent_workers=True)
+    # dit_features_path_list = glob.glob(f"{args.dit_features_path}/*.pth")
+    motion_to_infer = glob.glob(f"{args.dit_features_path}/*_{args.motion_name}_*.pth")
+    if len(motion_to_infer) == 0:
+        logger.error(f"No sample found for motion name '{args.motion_name}' in path '{args.dit_features_path}'. Please check the motion name and path.")
+        exit(1)
+    else:
+        motion_to_infer = sorted_by_chunk_id(motion_to_infer)
 
-    sample_dat = next(iter(test_dataloader))
+    test_motion_dataset = DitFeaturesDataset(motion_to_infer, preferred_dit_block_id=args.preferred_dit_block_id)
+    test_motion_dataloader = th.utils.data.DataLoader(test_motion_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=test_motion_dataset.collate_fn_, persistent_workers=True)
+
+    sample_dat = next(iter(test_motion_dataloader))
     dim = sample_dat["dim"].item()
     out_dim = sample_dat["out_dim"].item()
     patch_size = [i.item() for i in sample_dat["patch_size"]]
@@ -267,19 +281,14 @@ if __name__ == "__main__":
     logger.warning("Motion parameters:")
     logger.info(f"J: {args.J}")
     logger.info(f"out_J_chn: {args.out_J_chn}")
+    logger.info(f"predict_motion_dt: {args.predict_motion_dt}")
     logger.warning("Inference parameters:")
     logger.info(f"gpu_id: {args.gpu_id}")
     logger.info(f"ckpt: {args.ckpt}")
 
-    motion_to_infer = glob.glob(f"{args.dit_features_path}/*_{args.motion_name}_*.pth")
-    if len(motion_to_infer) == 0:
-        logger.error(f"No sample found for motion name '{args.motion_name}' in path '{args.dit_features_path}'. Please check the motion name and path.")
-        exit(1)
-    else:
-        motion_to_infer = sorted_by_chunk_id(motion_to_infer)
 
     # Initialize model
-    model = SkelAg(dim=dim, out_dim=out_dim, patch_size=patch_size, J=args.J, out_J_chn=args.out_J_chn).cuda(args.gpu_id)
+    model = SkelAg(dim=dim, out_dim=out_dim, patch_size=patch_size, J=args.J, out_J_chn=args.out_J_chn, predict_motion_dt=args.predict_motion_dt).cuda(args.gpu_id)
     mean_init, std_init = model.get_params_stats()
     logger.warning(f"Model initialized. Param mean: {mean_init:.6f}, std: {std_init:.6f}")
     state_dict = th.load(args.ckpt, map_location="cpu")
@@ -289,9 +298,8 @@ if __name__ == "__main__":
     assert abs(mean_loaded - mean_init) > 1e-5 or abs(std_loaded - std_init) > 1e-5, "Model parameters do not seem to be loaded properly (mean/std are almost the same as initialized). Please check the checkpoint path and content."
     model.eval().cuda(args.gpu_id)
 
-    test_motion_dataset = DitFeaturesDataset(motion_to_infer, preferred_dit_block_id=args.preferred_dit_block_id)
-    test_motion_dataloader = th.utils.data.DataLoader(test_motion_dataset, batch_size=1, shuffle=False, num_workers=2, collate_fn=test_motion_dataset.collate_fn_, persistent_workers=True)
     
+    all_video_frames = []
     motion2d_frames = []
     motion3d_frames = []
     gt_motion2d_frames = []
@@ -299,6 +307,7 @@ if __name__ == "__main__":
 
     for data in test_motion_dataloader:
         _, output = model(data)
+        all_video_frames.append(data["input_video"])
         motion2d_frames.append(output["motion_pred_2d"].detach().cpu())
         motion3d_frames.append(output["motion_pred_3d"].detach().cpu())
         gt_motion2d_frames.append(output["motion_gt_2d"].detach().cpu())
@@ -312,8 +321,31 @@ if __name__ == "__main__":
     bones = output["bones"]
     edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in bones]
 
-    anim = MultiSkeleton2D3DAnimator(fps=30, title=args.motion_name, y_axis_down=True)
-    anim.add_sequence(motion3d, K2=motion2d, edges=edges, color="red", name="Prediction")
-    anim.add_sequence(gt_motion3d, K2=gt_motion2d, edges=edges, color="blue", name="Ground Truth")
-    plotly.offline.plot(anim.fig, filename=f'./ggez.html', auto_open=False)
+    # Save the output to a .npz file
+    model_name = os.path.basename(args.ckpt).replace(".pth", "")
+    os.makedirs(os.path.join(args.output_path, model_name, args.motion_name), exist_ok=True)
 
+    def _nonconflict_path(base: str) -> str:
+        """Return base if it doesn't exist, otherwise base_1, base_2, …"""
+        if not os.path.exists(base):
+            return base
+        stem, ext = os.path.splitext(base)
+        i = 1
+        while os.path.exists(f"{stem}_{i}{ext}"):
+            i += 1
+        return f"{stem}_{i}{ext}"
+
+    output_file = _nonconflict_path(os.path.join(args.output_path, model_name, args.motion_name, f"res.npz"))
+    np.savez(output_file, {
+        "input_video": all_video_frames, # list of PIL images
+        "motion_pred_2d": motion2d.numpy(),
+        "motion_pred_3d": motion3d.numpy(),
+        "motion_gt_2d": gt_motion2d.numpy(),
+        "motion_gt_3d": gt_motion3d.numpy(),
+        "joint_names": np.array(joint_names),
+        "bones": np.array(bones),
+        "edges": np.array(edges),
+        "motion_name": args.motion_name,
+        "ckpt": args.ckpt,
+        "dit_features_path": args.dit_features_path
+    })
