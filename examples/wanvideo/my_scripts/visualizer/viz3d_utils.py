@@ -782,10 +782,10 @@ def generate_html(
             )
         rows_html_parts.append(
             f'''<div class="sample-row">
-{playbar}
 <div class="panels-grid" style="grid-template-columns:repeat({ncols},1fr);height:{cell_height}px;">
 {cells_html}
 </div>
+{playbar}
 </div>'''
         )
     rows_html = "\n".join(rows_html_parts)
