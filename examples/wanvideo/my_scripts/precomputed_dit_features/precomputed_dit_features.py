@@ -181,7 +181,7 @@ class WanTrainingModule(DiffusionTrainingModule):
 if __name__ == "__main__":
     parser = wan_parser()
     args = parser.parse_args()
-    seed_everything(args.seed)
+    # seed_everything(args.seed)
     accelerator = accelerate.Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         kwargs_handlers=[accelerate.DistributedDataParallelKwargs(find_unused_parameters=args.find_unused_parameters)],
