@@ -306,8 +306,10 @@ if __name__ == "__main__":
     gt_motion3d_frames = []
 
     for data in test_motion_dataloader:
+        print(len(data['input_video']))
+        input_video = [np.array(frame) for frame in data["input_video"]]  # (T, H, W, 3)
+        all_video_frames.extend(input_video)
         _, output = model(data)
-        all_video_frames.append(data["input_video"])
         motion2d_frames.append(output["motion_pred_2d"].detach().cpu())
         motion3d_frames.append(output["motion_pred_3d"].detach().cpu())
         gt_motion2d_frames.append(output["motion_gt_2d"].detach().cpu())
@@ -335,9 +337,10 @@ if __name__ == "__main__":
             i += 1
         return f"{stem}_{i}{ext}"
 
+    all_video_frames = np.concatenate(all_video_frames, axis=0)  # (T, H, W, 3)
     output_file = _nonconflict_path(os.path.join(args.output_path, model_name, args.motion_name, f"res.npz"))
-    np.savez(output_file, {
-        "input_video": all_video_frames, # list of PIL images
+    save_dict = {
+        "input_video": all_video_frames,
         "motion_pred_2d": motion2d.numpy(),
         "motion_pred_3d": motion3d.numpy(),
         "motion_gt_2d": gt_motion2d.numpy(),
@@ -348,4 +351,5 @@ if __name__ == "__main__":
         "motion_name": args.motion_name,
         "ckpt": args.ckpt,
         "dit_features_path": args.dit_features_path
-    })
+    }
+    np.savez(output_file, **save_dict)

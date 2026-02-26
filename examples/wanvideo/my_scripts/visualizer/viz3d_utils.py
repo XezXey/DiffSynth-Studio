@@ -33,7 +33,7 @@ Multi-Model Comparison
 New simplified API for comparing multiple models:
 
     panel_3d(skeletons=[
-        {"joints": model1_motion, "color": "#4ECDC4", "label": "Model A"},
+        {"joints": model1_motion, "color": "#2C07D1", "label": "Model A"},
         {"joints": model2_motion, "color": "#FF6B6B", "label": "Model B"},
         {"joints": model3_motion, "color": "#FFB86C", "label": "Model C"},
         {"joints": gt_motion,     "color": "#50FA7B", "label": "Ground Truth"},
@@ -91,7 +91,7 @@ COCO17_EDGES = [
 ]
 _JOINT_SETS = {"smpl22": SMPL22_EDGES, "coco17": COCO17_EDGES}
 
-PRED_COLOR = "#4ECDC4"
+PRED_COLOR = "#FFFB27"
 GT_COLOR   = "#FF6B6B"
 
 # ── Image encoding ────────────────────────────────────────────────────────────
@@ -134,6 +134,7 @@ def panel_3d(
     label: str = "",
     skeletons: Optional[list] = None,  # New simplified API
     edges: Optional[list] = None,       # e.g. [[0,1],[1,2],...] overrides global joint_set
+    coord: str = "y_up",               # "y_up" (default) | "z_up" (Z is vertical, X-Y horizontal)
 ) -> dict:
     """
     3-D Three.js skeleton panel.
@@ -147,6 +148,10 @@ def panel_3d(
     label           : cell badge text
     skeletons       : list of {"joints":(T,J,3), "color":"#hex", "label":str}
                       Use this for multi-model comparison (overrides pred/gt)
+    coord           : coordinate convention of the input joints.
+                      "y_up"  – Three.js default: X right, Y up, Z toward viewer.
+                      "z_up"  – common in Blender/physics: X right, Y forward, Z up.
+                                Automatically remapped to Y-up before rendering.
     """
     if skeletons is not None:
         # New simplified API - use directly
@@ -162,7 +167,7 @@ def panel_3d(
             for s in extra_skeletons:
                 skels.append({"joints": np.asarray(s["joints"]).tolist(),
                               "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
-    out: dict = {"type": "3d", "skeletons": skels, "label": label}
+    out: dict = {"type": "3d", "skeletons": skels, "label": label, "coord": coord}
     if edges is not None:
         out["edges"] = edges
     return out
@@ -213,6 +218,11 @@ def panel_image_overlay(
     label:         str = "",
     image_quality: int = 75,
     edges:         Optional[list] = None,  # e.g. [[0,1],[1,2],...] overrides global joint_set
+    joints_space:  str = "auto",  # "auto" = auto-normalise to canvas (default)
+                                  # "image" = coords are [0,1] normalised to image dims
+                                  #           (maps onto the letterboxed image rect)
+    skeletons:     Optional[list] = None,  # simplified multi-skeleton API (overrides joints/joints_gt)
+                                           # list of {"joints":(T,J,2), "color":"#hex", "label":str}
 ) -> dict:
     """
     Image + 2-D skeleton overlay panel.
@@ -226,14 +236,26 @@ def panel_image_overlay(
     gt_color     : hex colour for gt skeleton
     label        : cell badge text
     image_quality: JPEG quality 1-95  (lower → smaller file)
+    joints_space : "auto" — auto-scale to fill canvas (ignores image layout)
+                   "image" — joints are [0,1] normalised to image dimensions;
+                             they will be projected onto the letterboxed image
+                             rect so keypoints stay pixel-accurate.
+    skeletons    : list of {"joints":(T,J,2), "color":"#hex", "label":str}
+                   Use this for multi-model overlay comparison (overrides joints/joints_gt).
     """
     encoded = _encode_images(images, quality=image_quality)
-    skels   = []
-    if joints is not None:
-        skels.append({"joints": np.asarray(joints).tolist(), "color": joint_color, "label": "pred"})
-    if joints_gt is not None:
-        skels.append({"joints": np.asarray(joints_gt).tolist(), "color": gt_color, "label": "gt"})
-    out: dict = {"type": "image_overlay", "images": encoded, "skeletons": skels, "label": label}
+    if skeletons is not None:
+        skels = [{"joints": np.asarray(s["joints"]).tolist(),
+                  "color": s.get("color", PRED_COLOR),
+                  "label": s.get("label", "")} for s in skeletons]
+    else:
+        skels = []
+        if joints is not None:
+            skels.append({"joints": np.asarray(joints).tolist(), "color": joint_color, "label": "pred"})
+        if joints_gt is not None:
+            skels.append({"joints": np.asarray(joints_gt).tolist(), "color": gt_color, "label": "gt"})
+    out: dict = {"type": "image_overlay", "images": encoded, "skeletons": skels,
+                 "label": label, "joints_space": joints_space}
     if edges is not None:
         out["edges"] = edges
     return out
@@ -428,7 +450,16 @@ function init3DPanel(cell,pd){
   orb.minDistance=0.5; orb.maxDistance=20; orb.update();
   buildLights(scene); buildFloor(scene); scene.add(new THREE.AxesHelper(0.35));
   var edges=pd.edges||EDGES;
-  var ns=normSkels3D(pd.skeletons); var J=ns[0].normed[0].length;
+  // ── Axis remap: z_up → y_up (swap Y↔Z, negate new Z so Y-forward→Z-back) ──
+  var skelData=pd.skeletons;
+  if(pd.coord==='z_up'){
+    skelData=pd.skeletons.map(function(s){
+      return Object.assign({},s,{joints:s.joints.map(function(fr){
+        return fr.map(function(jt){return [jt[0], jt[2], -jt[1]];});
+      })});
+    });
+  }
+  var ns=normSkels3D(skelData); var J=ns[0].normed[0].length;
   var objs=ns.map(function(sk){
     var col=new THREE.Color(sk.color);
     var jm=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.5});
@@ -507,21 +538,39 @@ function initImageOverlayPanel(cell,pd){
     i.src=src;
     return i;
   });
-  var ns=pd.skeletons.length?normSkels2D(pd.skeletons,W,H):[];
-  var objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
+  var imageSpace=(pd.joints_space==='image');
+  // For 'auto' mode pre-normalise once; for 'image' mode keep raw [0,1] coords.
+  var ns=(!imageSpace&&pd.skeletons.length)?normSkels2D(pd.skeletons,W,H):[];
+  var objs;
+  if(imageSpace){
+    objs=pd.skeletons.map(function(s){return{raw:s.joints,color:s.color,visible:true};});
+  } else {
+    objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
+  }
   var edgesOv=pd.edges||EDGES;
   function draw(f){
     lastFrame=f;
     var cW=cv.width,cH=cv.height;
     ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,cW,cH);  // always paint background first
     var img=imgs[f%T];
+    var imgX=0,imgY=0,imgW=cW,imgH=cH;
     if(img.complete&&img.naturalWidth){
       var sc=Math.min(cW/img.naturalWidth,cH/img.naturalHeight);
-      var dw=img.naturalWidth*sc,dh=img.naturalHeight*sc;
-      ctx.drawImage(img,(cW-dw)/2,(cH-dh)/2,dw,dh);
+      imgW=img.naturalWidth*sc; imgH=img.naturalHeight*sc;
+      imgX=(cW-imgW)/2; imgY=(cH-imgH)/2;
+      ctx.drawImage(img,imgX,imgY,imgW,imgH);
     }
     if(objs.length){
-      var items=objs.filter(function(o){return o.visible;}).map(function(o){return{color:o.color,pts:o.normed[f]};});
+      var items=objs.filter(function(o){return o.visible;}).map(function(o){
+        var pts;
+        if(imageSpace){
+          // Map [0,1] image-normalised coords onto the letterboxed image rect
+          pts=o.raw[f].map(function(jt){return[imgX+jt[0]*imgW, imgY+jt[1]*imgH];});
+        } else {
+          pts=o.normed[f];
+        }
+        return{color:o.color,pts:pts};
+      });
       draw2D(ctx,cW,cH,items,edgesOv);
     }
   }
@@ -529,10 +578,11 @@ function initImageOverlayPanel(cell,pd){
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
   function resize(w,h){
     cv.width=w;cv.height=h;
-    if(pd.skeletons.length){
+    if(!imageSpace&&pd.skeletons.length){
       ns=normSkels2D(pd.skeletons,w,h);
       objs=ns.map(function(s,i){return{normed:s.normed,color:s.color,visible:objs[i]?objs[i].visible:true};});
     }
+    draw(lastFrame);  // redraw after resize
   }
   return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
 }
