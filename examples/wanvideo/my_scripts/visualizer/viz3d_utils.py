@@ -21,6 +21,24 @@ Panel types
       Canvas: images drawn as background with 2-D skeleton overlaid.
       Ideal for showing input video frames with predicted / GT keypoints.
 
+Interactive Features (NEW)
+--------------------------
+  • Click skeleton badges to toggle visibility (hide/show individual models)
+  • Shift+Click a badge to show ONLY that skeleton (solo mode)
+  • Press 1-9 keys to toggle skeletons 1-9 across all panels
+  • Visual feedback: hidden skeletons shown with strikethrough + opacity
+
+Multi-Model Comparison
+----------------------
+New simplified API for comparing multiple models:
+
+    panel_3d(skeletons=[
+        {"joints": model1_motion, "color": "#4ECDC4", "label": "Model A"},
+        {"joints": model2_motion, "color": "#FF6B6B", "label": "Model B"},
+        {"joints": model3_motion, "color": "#FFB86C", "label": "Model C"},
+        {"joints": gt_motion,     "color": "#50FA7B", "label": "Ground Truth"},
+    ])
+
 Quick-start
 -----------
     from viz3d_utils import generate_html, panel_3d, panel_2d, panel_image_overlay
@@ -113,6 +131,7 @@ def panel_3d(
     pred_color: str = PRED_COLOR,
     gt_color:   str = GT_COLOR,
     label: str = "",
+    skeletons: Optional[list] = None,  # New simplified API
 ) -> dict:
     """
     3-D Three.js skeleton panel.
@@ -124,14 +143,23 @@ def panel_3d(
     extra_skeletons : list of {"joints":(T,J,3), "color":"#hex", "label":str}
     pred_color, gt_color : hex tints
     label           : cell badge text
+    skeletons       : list of {"joints":(T,J,3), "color":"#hex", "label":str}
+                      Use this for multi-model comparison (overrides pred/gt)
     """
-    skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
-    if gt is not None:
-        skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
-    if extra_skeletons:
-        for s in extra_skeletons:
-            skels.append({"joints": np.asarray(s["joints"]).tolist(),
-                          "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
+    if skeletons is not None:
+        # New simplified API - use directly
+        skels = [{"joints": np.asarray(s["joints"]).tolist(),
+                  "color": s.get("color", PRED_COLOR),
+                  "label": s.get("label", "")} for s in skeletons]
+    else:
+        # Legacy API
+        skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
+        if gt is not None:
+            skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
+        if extra_skeletons:
+            for s in extra_skeletons:
+                skels.append({"joints": np.asarray(s["joints"]).tolist(),
+                              "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
     return {"type": "3d", "skeletons": skels, "label": label}
 
 def panel_2d(
@@ -141,6 +169,7 @@ def panel_2d(
     pred_color: str = PRED_COLOR,
     gt_color:   str = GT_COLOR,
     label: str = "",
+    skeletons: Optional[list] = None,  # New simplified API
 ) -> dict:
     """
     2-D canvas skeleton panel.
@@ -149,14 +178,21 @@ def panel_2d(
     ----------
     pred : (T, J, 2)  predicted 2-D keypoints
     gt   : (T, J, 2)  ground-truth              (optional)
+    skeletons : list of {"joints":(T,J,2), "color":"#hex", "label":str}
+                Use this for multi-model comparison (overrides pred/gt)
     """
-    skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
-    if gt is not None:
-        skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
-    if extra_skeletons:
-        for s in extra_skeletons:
-            skels.append({"joints": np.asarray(s["joints"]).tolist(),
-                          "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
+    if skeletons is not None:
+        skels = [{"joints": np.asarray(s["joints"]).tolist(),
+                  "color": s.get("color", PRED_COLOR),
+                  "label": s.get("label", "")} for s in skeletons]
+    else:
+        skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
+        if gt is not None:
+            skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
+        if extra_skeletons:
+            for s in extra_skeletons:
+                skels.append({"joints": np.asarray(s["joints"]).tolist(),
+                              "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
     return {"type": "2d", "skeletons": skels, "label": label}
 
 def panel_image_overlay(
@@ -255,11 +291,23 @@ header span { font-size:11px; color:var(--muted); font-family:'Space Mono',monos
 }
 .skel-legends {
   position:absolute; bottom:8px; left:8px; z-index:30;
-  display:flex; gap:5px; flex-wrap:wrap; pointer-events:none;
+  display:flex; gap:5px; flex-wrap:wrap; pointer-events:auto;
 }
 .skel-badge {
   font-family:'Space Mono',monospace; font-size:9px; font-weight:700;
   padding:2px 7px; border-radius:9px; backdrop-filter:blur(4px);
+  cursor:pointer; transition:opacity .2s, transform .1s;
+  user-select:none;
+}
+.skel-badge:hover { transform:scale(1.05); }
+.skel-badge:active { transform:scale(0.95); }
+.skel-badge.hidden { opacity:0.3; text-decoration:line-through; }
+.kbd-hint {
+  position:absolute; top:7px; right:9px; z-index:30;
+  font-family:'Space Mono',monospace; font-size:8px; color:var(--muted);
+  background:rgba(0,0,0,.4); backdrop-filter:blur(4px);
+  border:1px solid var(--border); padding:2px 6px; border-radius:8px;
+  pointer-events:none; user-select:none;
 }
 """
 
@@ -380,24 +428,30 @@ function init3DPanel(cell,pd){
       g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
       var l=new THREE.Line(g,bm); scene.add(l); return l;
     });
-    return {jts:jts,bns:bns,normed:sk.normed};
+    return {jts:jts,bns:bns,normed:sk.normed,visible:true};
   });
   function loop(){requestAnimationFrame(loop);orb.update();rdr.render(scene,cam);}
   loop();
   function setFrame(f){
     for(var oi=0;oi<objs.length;oi++){
       var o=objs[oi],pts=o.normed[f];
-      for(var j=0;j<J;j++) o.jts[j].position.set(pts[j][0],pts[j][1],pts[j][2]);
+      var vis=o.visible;
+      for(var j=0;j<J;j++){
+        o.jts[j].position.set(pts[j][0],pts[j][1],pts[j][2]);
+        o.jts[j].visible=vis;
+      }
       for(var e=0;e<edges.length;e++){
         var ab=edges[e],pos=o.bns[e].geometry.attributes.position;
         pos.setXYZ(0,pts[ab[0]][0],pts[ab[0]][1],pts[ab[0]][2]);
         pos.setXYZ(1,pts[ab[1]][0],pts[ab[1]][1],pts[ab[1]][2]);
         pos.needsUpdate=true;
+        o.bns[e].visible=vis;
       }
     }
   }
+  function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
   function resize(w,h){rdr.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix();}
-  return {setFrame:setFrame,resize:resize};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
 }
 
 // ── 2-D panel ─────────────────────────────────────────────────────────────────
@@ -407,12 +461,20 @@ function init2DPanel(cell,pd){
   cv.width=W; cv.height=H;
   var ctx=cv.getContext('2d');
   var ns=normSkels2D(pd.skeletons,W,H);
+  var objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
   function setFrame(f){
-    var items=ns.map(function(s){return{color:s.color,pts:s.normed[f]};});
+    var items=objs.filter(function(o){return o.visible;}).map(function(o){return{color:o.color,pts:o.normed[f]};});
     draw2D(ctx,cv.width,cv.height,items,EDGES);
   }
-  function resize(w,h){cv.width=w;cv.height=h;ns=normSkels2D(pd.skeletons,w,h);}
-  return {setFrame:setFrame,resize:resize};
+  function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
+  function resize(w,h){
+    cv.width=w;cv.height=h;
+    ns=normSkels2D(pd.skeletons,w,h);
+    // Preserve visibility state during resize
+    var oldVis=objs.map(function(o){return o.visible;});
+    objs=ns.map(function(s,i){return{normed:s.normed,color:s.color,visible:oldVis[i]!==undefined?oldVis[i]:true};});
+  }
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
 }
 
 // ── Image overlay panel ───────────────────────────────────────────────────────
@@ -424,6 +486,7 @@ function initImageOverlayPanel(cell,pd){
   var T=pd.images.length;
   var imgs=pd.images.map(function(src){var i=new Image();i.src=src;return i;});
   var ns=pd.skeletons.length?normSkels2D(pd.skeletons,W,H):[];
+  var objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
   function draw(f){
     var cW=cv.width,cH=cv.height; ctx.clearRect(0,0,cW,cH);
     var img=imgs[f%T];
@@ -432,17 +495,21 @@ function initImageOverlayPanel(cell,pd){
       var dw=img.naturalWidth*sc,dh=img.naturalHeight*sc;
       ctx.drawImage(img,(cW-dw)/2,(cH-dh)/2,dw,dh);
     } else { img.onload=function(){draw(f);}; ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,cW,cH); }
-    if(ns.length){
-      var items=ns.map(function(s){return{color:s.color,pts:s.normed[f]};});
+    if(objs.length){
+      var items=objs.filter(function(o){return o.visible;}).map(function(o){return{color:o.color,pts:o.normed[f]};});
       draw2D(ctx,cW,cH,items,EDGES);
     }
   }
   function setFrame(f){draw(f);}
+  function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
   function resize(w,h){
     cv.width=w;cv.height=h;
-    if(pd.skeletons.length)ns=normSkels2D(pd.skeletons,w,h);
+    if(pd.skeletons.length){
+      ns=normSkels2D(pd.skeletons,w,h);
+      objs=ns.map(function(s,i){return{normed:s.normed,color:s.color,visible:objs[i]?objs[i].visible:true};});
+    }
   }
-  return {setFrame:setFrame,resize:resize};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
 }
 
 // ── Per-row shared playback controller ───────────────────────────────────────
@@ -481,23 +548,105 @@ function initRowController(ri,T,panels){
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
+var PANEL_REGISTRY={};  // Global registry: PANEL_REGISTRY[ri][ci] = panel
 function bootstrap(){
   for(var ri=0;ri<ALL_ROWS.length;ri++){
     (function(rowIdx){
       var row=ALL_ROWS[rowIdx];
       var panels=[];
+      PANEL_REGISTRY[rowIdx]={};
       for(var ci=0;ci<row.panels.length;ci++){
         var pd=row.panels[ci];
         var cell=document.getElementById('cell-r'+rowIdx+'-c'+ci);
-        if(pd.type==='3d')            panels.push(init3DPanel(cell,pd));
-        else if(pd.type==='2d')            panels.push(init2DPanel(cell,pd));
-        else if(pd.type==='image_overlay') panels.push(initImageOverlayPanel(cell,pd));
-        else panels.push({setFrame:function(){},resize:function(){}});
+        var panel;
+        if(pd.type==='3d')            panel=init3DPanel(cell,pd);
+        else if(pd.type==='2d')            panel=init2DPanel(cell,pd);
+        else if(pd.type==='image_overlay') panel=initImageOverlayPanel(cell,pd);
+        else panel={setFrame:function(){},resize:function(){},setVisibility:function(){}};
+        panels.push(panel);
+        PANEL_REGISTRY[rowIdx][ci]=panel;  // Store in global registry
+        
+        // ── Skeleton badge interactions ──────────────────────────────────────
+        if(pd.skeletons&&pd.skeletons.length>1){
+          var badges=cell.querySelectorAll('.skel-badge');
+          for(var bi=0;bi<badges.length;bi++){
+            (function(badgeIdx,badge,panelRef,cellRef){
+              badge.addEventListener('click',function(e){
+                if(e.shiftKey){
+                  // Shift+click: show ONLY this skeleton
+                  for(var i=0;i<badges.length;i++){
+                    var vis=(i===badgeIdx);
+                    if(panelRef.setVisibility)panelRef.setVisibility(i,vis);
+                    if(vis){
+                      badges[i].classList.remove('hidden');
+                    }else{
+                      badges[i].classList.add('hidden');
+                    }
+                  }
+                } else {
+                  // Normal click: toggle this skeleton
+                  var isHidden=badge.classList.contains('hidden');
+                  var newVis=isHidden;  // If currently hidden, make visible
+                  if(newVis){
+                    badge.classList.remove('hidden');
+                  }else{
+                    badge.classList.add('hidden');
+                  }
+                  if(panelRef.setVisibility)panelRef.setVisibility(badgeIdx,newVis);
+                }
+                if(panelRef.setFrame)panelRef.setFrame(getCurrentFrame(rowIdx));
+                e.stopPropagation();
+              });
+            })(bi,badges[bi],panel,cell);
+          }
+        }
       }
       initRowController(rowIdx,row.T,panels);
     })(ri);
   }
+  
+  // ── Global keyboard shortcuts ───────────────────────────────────────────────
+  document.addEventListener('keydown',function(e){
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+    var key=e.key;
+    if(key>='1'&&key<='9'){
+      var idx=parseInt(key)-1;
+      // Toggle skeleton idx across all panels in all rows
+      for(var ri=0;ri<ALL_ROWS.length;ri++){
+        var row=ALL_ROWS[ri];
+        for(var ci=0;ci<row.panels.length;ci++){
+          var pd=row.panels[ci];
+          if(pd.skeletons&&pd.skeletons.length>idx){
+            var cell=document.getElementById('cell-r'+ri+'-c'+ci);
+            var badges=cell.querySelectorAll('.skel-badge');
+            var panel=PANEL_REGISTRY[ri][ci];
+            if(badges[idx]&&panel){
+              // Toggle the badge and panel visibility directly
+              var isHidden=badges[idx].classList.contains('hidden');
+              var newVis=isHidden;  // If currently hidden, make visible
+              if(newVis){
+                badges[idx].classList.remove('hidden');
+              }else{
+                badges[idx].classList.add('hidden');
+              }
+              if(panel.setVisibility)panel.setVisibility(idx,newVis);
+              if(panel.setFrame)panel.setFrame(getCurrentFrame(ri));
+            }
+          }
+        }
+      }
+      e.preventDefault();
+    }
+  });
 }
+
+function getCurrentFrame(rowIdx){
+  var bar=document.getElementById('playbar-r'+rowIdx);
+  if(!bar)return 0;
+  var slider=bar.querySelector('.slider');
+  return slider?parseInt(slider.value):0;
+}
+
 if(document.readyState==='loading')
   document.addEventListener('DOMContentLoaded',bootstrap);
 else
@@ -567,15 +716,19 @@ def _playbar_html(row_index: int, T: int) -> str:
 def _skel_badges_html(skeletons: list[dict]) -> str:
     """Return legend badge HTML for skeleton list inside a panel."""
     parts = []
-    for s in skeletons:
+    for idx, s in enumerate(skeletons):
         lbl = s.get("label", "")
         col = s.get("color", "#888")
         if lbl:
+            kbd_num = idx + 1 if idx < 9 else ""  # Only show 1-9
+            title = f"Click to toggle · Shift+Click for solo{' · Press '+str(kbd_num) if kbd_num else ''}"
             parts.append(
-                f'''<span class="skel-badge" style="background:{col}22;border:1px solid {col}66;color:{col}">'''
-                + lbl + "</span>"
+                f'''<span class="skel-badge" data-idx="{idx}" title="{title}" '''
+                f'''style="background:{col}22;border:1px solid {col}66;color:{col}">'''
+                + lbl + (f" <kbd style='opacity:0.5;font-size:7px'>{kbd_num}</kbd>" if kbd_num else "") + "</span>"
             )
-    return '''<div class="skel-legends">'''  + "".join(parts) + "</div>" if parts else ""
+    hint = '''<div class="kbd-hint">💡 Click badges · 1-9 keys · Shift+Click=solo</div>''' if len(parts) > 1 else ""
+    return ('''<div class="skel-legends">'''  + "".join(parts) + "</div>" + hint) if parts else ""
 
 
 def generate_html(
