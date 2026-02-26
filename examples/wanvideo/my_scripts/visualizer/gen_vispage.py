@@ -3,30 +3,30 @@ gen_vispage.py
 ==============
 Generate a visualisation HTML from one or more inference .npz result files.
 
-Grouping rules
+Grouping modes
 --------------
-By default, files that share the same `motion_name` field (stored inside the
-npz) are placed on the **same row** so their skeletons are overlaid — ideal
-for comparing different checkpoints on the same sequence.
+1. --row_id  (explicit)
+   Assign each file to a row by index.  Same index → same row, overlaid.
+   Example:  --row_id 0 0 1   puts files 0+1 together, file 2 alone.
 
-Files with **different** motion names get their own rows.
+2. Auto (default, no --row_id)
+   Files that share the same motion_name (read from the npz or inferred from
+   the directory structure) are placed on the same row.
+
+3. --no_group
+   Every file gets its own row regardless.
 
 Usage examples
 --------------
-# Single file
-python gen_vispage.py --out out.html --prediction_path result.npz
+# Explicit grouping: first 3 on row 0, 4th on row 1
+python gen_vispage.py --out out.html \\
+    --prediction_path a.npz b.npz c.npz d.npz \\
+    --row_id 0 0 0 1
 
-# Compare two ckpts on the same motion (auto-grouped by motion_name)
-python gen_vispage.py --out out.html --prediction_path ckptA_walk.npz ckptB_walk.npz
+# Auto-group by motion_name (default)
+python gen_vispage.py --out out.html --prediction_path ckptA_walk.npz ckptB_walk.npz ckptA_run.npz
 
-# Two different motions → two rows each with one ckpt
-python gen_vispage.py --out out.html --prediction_path ckptA_walk.npz ckptA_run.npz
-
-# Mixed: two ckpts on walk (same row) + one ckpt on run (separate row)
-python gen_vispage.py --out out.html \
-    --prediction_path ckptA_walk.npz ckptB_walk.npz ckptA_run.npz
-
-# Force all files onto separate rows regardless of motion name
+# Every file on its own row
 python gen_vispage.py --out out.html --no_group --prediction_path *.npz
 """
 
@@ -37,8 +37,7 @@ from collections import defaultdict
 import numpy as np
 import argparse
 
-# Colour palette for multiple predictions on the same row
-# GT always gets the last colour (green)
+# Colour palette for overlaid predictions (GT always uses _GT_COLOR)
 _PRED_PALETTE = [
     "#4ECDC4",  # teal
     "#FF6B6B",  # coral
@@ -50,8 +49,9 @@ _PRED_PALETTE = [
 _GT_COLOR = "#50FA7B"  # green
 
 
+# ── Path-label helpers ────────────────────────────────────────────────────────
+
 def _shorten(s: str, max_len: int = 28) -> str:
-    """Trim a long directory name to fit in a badge."""
     return s if len(s) <= max_len else s[:max_len - 1] + "…"
 
 
@@ -59,14 +59,12 @@ def _parse_path_labels(npz_path: str) -> tuple[str, str]:
     """
     Infer (motion_name, ckpt_label) from the directory structure.
 
-    Expected layout (any depth):
-        .../<model_config>/<ckpt_name>/<motion_name>/res.npz
+    Expected layout:  .../<model_config>/<ckpt_name>/<motion_name>/res.npz
 
     Example:
-        .../results/heatmap_TI2V-5B_320x640_t20/model_step_170000/michelle_Jump/res.npz
+        .../results/heatmap_TI2V-5B_320x640/model_step_170000/michelle_Jump/res.npz
         → motion_name = "michelle_Jump"
-        → ckpt_label  = "model_step_170000 / heatmap_TI2V-5B_320x640_t20"
-                         (ckpt first so badges stay readable when truncated)
+        → ckpt_label  = "model_step_170000 / heatmap_TI2V-5B_320x6…"
     """
     parts = Path(npz_path).parts
     if len(parts) >= 4:
@@ -86,17 +84,18 @@ def _parse_path_labels(npz_path: str) -> tuple[str, str]:
     return motion_name, ckpt_label
 
 
+# ── npz loader ────────────────────────────────────────────────────────────────
+
 def _load_npz(path: str) -> dict:
     dat = np.load(path, allow_pickle=True)
-
     path_motion, path_ckpt = _parse_path_labels(path)
-    # Prefer fields stored in the npz, fall back to path-derived labels
+
     motion_name = str(dat["motion_name"]).strip() if "motion_name" in dat else path_motion
     ckpt_label  = Path(str(dat["ckpt"])).stem.strip() if "ckpt" in dat else path_ckpt
-    # If the stored ckpt field is empty / uninformative, use the path-derived one
     if not ckpt_label:
         ckpt_label = path_ckpt
 
+    print(f"  motion={motion_name}  ckpt={ckpt_label}")
     return {
         "path":           path,
         "motion_name":    motion_name,
@@ -110,91 +109,103 @@ def _load_npz(path: str) -> dict:
     }
 
 
-def build_rows(entries: list[dict], image_quality: int = 90) -> list[dict]:
-    """
-    Build the rows list consumed by generate_html.
+# ── Row builder ───────────────────────────────────────────────────────────────
 
-    Each entry in `entries` is one loaded npz dict (from _load_npz).
-    Entries that share the same motion_name are merged into one row.
+def _build_row(group: list[dict], row_label: str, image_quality: int) -> dict:
+    """Turn a list of entries that belong to the same row into a row dict."""
+    T      = group[0]["motion_pred_3d"].shape[0]
+    edges  = group[0]["edges"]
+    images = group[0]["input_video"]   # frames from first entry (same motion/video)
+    gt_3d  = group[0]["motion_gt_3d"]
+    gt_2d  = group[0]["motion_gt_2d"]
+
+    skels_3d = []
+    skels_2d = []
+    for i, e in enumerate(group):
+        col = _PRED_PALETTE[i % len(_PRED_PALETTE)]
+        skels_3d.append({"joints": e["motion_pred_3d"], "color": col, "label": e["ckpt_label"]})
+        skels_2d.append({"joints": e["motion_pred_2d"], "color": col, "label": e["ckpt_label"]})
+
+    skels_3d.append({"joints": gt_3d, "color": _GT_COLOR, "label": "GT"})
+    skels_2d.append({"joints": gt_2d, "color": _GT_COLOR, "label": "GT"})
+
+    return {
+        "label": row_label,
+        "T":     T,
+        "panels": [
+            panel_3d(
+                skeletons=skels_3d,
+                edges=edges,
+                coord="z_up",
+                label="3D",
+            ),
+            panel_image_overlay(
+                images=images,
+                skeletons=skels_2d,
+                edges=edges,
+                joints_space="image",
+                image_quality=image_quality,
+                label="Overlay",
+            ),
+        ],
+    }
+
+
+def build_rows(entries: list[dict], row_ids: list[int] | None,
+               image_quality: int = 90) -> list[dict]:
     """
-    # Group preserving insertion order
-    groups: dict[str, list[dict]] = defaultdict(list)
-    for e in entries:
-        groups[e["motion_name"]].append(e)
+    Group entries into rows and build the rows list for generate_html.
+
+    If row_ids is provided (same length as entries), entries with equal
+    row_id are placed on the same row in the order they first appear.
+    Otherwise entries are grouped by motion_name.
+    """
+    if row_ids is not None:
+        # Explicit grouping — preserve insertion order of row ids
+        groups: dict[int, list[dict]] = defaultdict(list)
+        seen_order: list[int] = []
+        for e, rid in zip(entries, row_ids):
+            if rid not in groups:
+                seen_order.append(rid)
+            groups[rid].append(e)
+        ordered_groups = [(rid, groups[rid]) for rid in seen_order]
+    else:
+        # Auto-group by motion_name
+        name_groups: dict[str, list[dict]] = defaultdict(list)
+        for e in entries:
+            name_groups[e["motion_name"]].append(e)
+        ordered_groups = list(name_groups.items())
 
     rows = []
-    for motion_name, group in groups.items():
-        T       = group[0]["motion_pred_3d"].shape[0]
-        edges   = group[0]["edges"]
-        images  = group[0]["input_video"]   # video frames from first entry (same motion)
-        gt_3d   = group[0]["motion_gt_3d"]
-        gt_2d   = group[0]["motion_gt_2d"]
-
-        # ── 3-D panel: all predictions + one shared GT ───────────────────────
-        skels_3d = []
-        for i, e in enumerate(group):
-            skels_3d.append({
-                "joints": e["motion_pred_3d"],
-                "color":  _PRED_PALETTE[i % len(_PRED_PALETTE)],
-                "label":  e["ckpt_label"],
-            })
-        skels_3d.append({
-            "joints": gt_3d,
-            "color":  _GT_COLOR,
-            "label":  "GT",
-        })
-
-        # ── Image-overlay panel: all predictions + one shared GT ─────────────
-        # Build skeleton list for the overlay (2-D, image-space)
-        joints_list = []
-        for i, e in enumerate(group):
-            joints_list.append({
-                "joints": e["motion_pred_2d"],
-                "color":  _PRED_PALETTE[i % len(_PRED_PALETTE)],
-                "label":  e["ckpt_label"],
-            })
-        joints_list.append({
-            "joints": gt_2d,
-            "color":  _GT_COLOR,
-            "label":  "GT",
-        })
-
-        row_label = motion_name
-        if len(group) > 1:
-            row_label += f"  [{len(group)} predictions]"
-
-        rows.append({
-            "label": row_label,
-            "T":     T,
-            "panels": [
-                panel_3d(
-                    skeletons=skels_3d,
-                    edges=edges,
-                    coord="z_up",
-                    label="3D",
-                ),
-                panel_image_overlay(
-                    images=images,
-                    skeletons=joints_list,
-                    edges=edges,
-                    joints_space="image",
-                    image_quality=image_quality,
-                    label="Overlay",
-                ),
-            ],
-        })
+    for key, group in ordered_groups:
+        n = len(group)
+        if row_ids is not None:
+            label = f"row {key}  ·  {', '.join(e['ckpt_label'] for e in group)}"
+        else:
+            motion = str(key)
+            label  = motion if n == 1 else f"{motion}  [{n} predictions]"
+        rows.append(_build_row(group, label, image_quality))
     return rows
 
 
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Generate skeleton visualisation HTML from npz results.")
-    ap.add_argument("--out",              default="./viz3d_out.html",   help="Output HTML path.")
-    ap.add_argument("--cell_height",      type=int, default=640,        help="Panel height in pixels.")
-    ap.add_argument("--image_quality",    type=int, default=90,         help="JPEG quality for frames (1-95).")
-    ap.add_argument("--no_group",         action="store_true",          help="Put every file on its own row (disable auto-grouping by motion name).")
-    ap.add_argument("--title",            default="Skeleton Viewer",    help="Page title.")
-    ap.add_argument("--prediction_path",  nargs="+", required=True,     help="One or more .npz result files.")
+    ap.add_argument("--out",           default="./viz3d_out.html",  help="Output HTML path.")
+    ap.add_argument("--cell_height",   type=int, default=640,       help="Panel height in pixels.")
+    ap.add_argument("--image_quality", type=int, default=90,        help="JPEG quality for frames (1-95).")
+    ap.add_argument("--title",         default="Skeleton Viewer",   help="Page title.")
+    ap.add_argument("--no_group",      action="store_true",         help="Put every file on its own row.")
+    ap.add_argument("--row_id",        nargs="+", type=int, default=None,
+                    help="Row index for each --prediction_path file (same length). "
+                         "Files with the same index share a row. E.g.: --row_id 0 0 0 1")
+    ap.add_argument("--prediction_path", nargs="+", required=True,  help="One or more .npz result files.")
     args = ap.parse_args()
+
+    if args.row_id is not None and len(args.row_id) != len(args.prediction_path):
+        ap.error(f"--row_id must have the same length as --prediction_path "
+                 f"({len(args.row_id)} vs {len(args.prediction_path)})")
 
     print(f"Loading {len(args.prediction_path)} file(s)…")
     entries = []
@@ -202,13 +213,14 @@ if __name__ == "__main__":
         print(f"  {p}")
         e = _load_npz(p)
         if args.no_group:
-            # Give each entry a unique motion key so they never merge
-            e["motion_name"] = Path(p).stem
+            e["motion_name"] = Path(p).stem   # unique key → each file gets its own row
         entries.append(e)
 
-    rows = build_rows(entries, image_quality=args.image_quality)
+    row_ids = args.row_id if not args.no_group else None
+    rows = build_rows(entries, row_ids=row_ids, image_quality=args.image_quality)
     print(f"Built {len(rows)} row(s).")
 
     generate_html(rows, output_path=args.out, title=args.title, cell_height=args.cell_height)
     sz = Path(args.out).stat().st_size / 1024
     print(f"Written {sz:.0f} KB → {args.out}")
+

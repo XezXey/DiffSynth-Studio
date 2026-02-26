@@ -126,7 +126,7 @@ def _encode_images(images: list, quality: int = 80) -> list:
 
 # ── Panel builders ────────────────────────────────────────────────────────────
 def panel_3d(
-    pred: np.ndarray,
+    pred: Optional[np.ndarray] = None,
     gt:   Optional[np.ndarray] = None,
     extra_skeletons: Optional[list] = None,
     pred_color: str = PRED_COLOR,
@@ -160,6 +160,8 @@ def panel_3d(
                   "label": s.get("label", "")} for s in skeletons]
     else:
         # Legacy API
+        if pred is None:
+            raise ValueError("panel_3d: supply either 'pred' (legacy) or 'skeletons' (multi-model API).")
         skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
         if gt is not None:
             skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
@@ -173,7 +175,7 @@ def panel_3d(
     return out
 
 def panel_2d(
-    pred: np.ndarray,
+    pred: Optional[np.ndarray] = None,
     gt:   Optional[np.ndarray] = None,
     extra_skeletons: Optional[list] = None,
     pred_color: str = PRED_COLOR,
@@ -197,6 +199,8 @@ def panel_2d(
                   "color": s.get("color", PRED_COLOR),
                   "label": s.get("label", "")} for s in skeletons]
     else:
+        if pred is None:
+            raise ValueError("panel_2d: supply either 'pred' (legacy) or 'skeletons' (multi-model API).")
         skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
         if gt is not None:
             skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
@@ -356,18 +360,10 @@ const ALL_ROWS=__ALL_ROWS__;
 const CELL_HEIGHT=__CELL_HEIGHT__;
 
 // ── Normalise 3-D skeletons (shared scale for pred+gt) ───────────────────────
+// No 3-D normalisation — joints are used as raw world-space coords so that
+// pred and GT share the same scale and origin (important for comparison).
 function normSkels3D(sl){
-  var mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
-  for(var _i=0;_i<sl.length;_i++){var s=sl[_i];
-    for(var fi=0;fi<s.joints.length;fi++){var fr=s.joints[fi];
-      for(var ji=0;ji<fr.length;ji++){var jt=fr[ji];
-        for(var k=0;k<3;k++){if(jt[k]<mn[k])mn[k]=jt[k];if(jt[k]>mx[k])mx[k]=jt[k];}
-      }}}
-  var range=Math.max(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2])||1;
-  var ctr=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2];
-  var yL=(mx[1]-mn[1])/(2*range);
-  return sl.map(function(s){return Object.assign({},s,{normed:s.joints.map(function(fr){
-    return fr.map(function(jt){return [(jt[0]-ctr[0])/range,(jt[1]-ctr[1])/range+yL,(jt[2]-ctr[2])/range];});})});});
+  return sl.map(function(s){return Object.assign({},s,{normed:s.joints});});
 }
 
 // ── Normalise 2-D skeletons to canvas space ──────────────────────────────────
