@@ -223,4 +223,3 @@ if __name__ == "__main__":
     generate_html(rows, output_path=args.out, title=args.title, cell_height=args.cell_height)
     sz = Path(args.out).stat().st_size / 1024
     print(f"Written {sz:.0f} KB → {args.out}")
-
