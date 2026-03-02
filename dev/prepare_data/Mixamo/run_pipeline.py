@@ -265,8 +265,6 @@ def step5_precompute(a: argparse.Namespace) -> None:
         f'{gc_flag}'
     )
     # precompute_features.py resolves internal paths relative to the repo root.
-    print(cmd)
-    exit()
     _run(cmd, cwd=_REPO_ROOT, step="5 – precompute VAE latents + DIT features")
 
 

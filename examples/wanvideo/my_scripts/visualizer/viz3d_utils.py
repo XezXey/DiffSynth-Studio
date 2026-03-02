@@ -348,6 +348,59 @@ header span { font-size:11px; color:var(--muted); font-family:'Space Mono',monos
   border:1px solid var(--border); padding:2px 6px; border-radius:8px;
   pointer-events:none; user-select:none;
 }
+/* ── Speed / Range / Color controls ──────────────────────────────── */
+.row-extras {
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  padding:5px 14px; background:rgba(0,0,0,.25);
+  border-bottom:1px solid var(--border);
+}
+.ctrl-group {
+  display:flex; align-items:center; gap:6px;
+  font-family:'Space Mono',monospace; font-size:10px; color:var(--muted);
+}
+.ctrl-group label { white-space:nowrap; text-transform:uppercase; letter-spacing:.05em; }
+.ctrl-group input[type=range] {
+  -webkit-appearance:none; height:3px; background:rgba(255,255,255,.15);
+  border-radius:2px; outline:none; cursor:pointer;
+}
+.ctrl-group input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:10px; height:10px;
+  border-radius:50%; background:var(--accent2); cursor:pointer;
+}
+.ctrl-val { min-width:36px; font-family:'Space Mono',monospace; font-size:10px; color:var(--text); }
+/* Dual-handle range slider */
+.dual-range { position:relative; width:130px; height:18px; }
+.dual-range input[type=range] {
+  position:absolute; width:100%; height:3px; top:7px;
+  pointer-events:none; -webkit-appearance:none; background:transparent;
+}
+.dual-range input[type=range]::-webkit-slider-thumb {
+  pointer-events:all; -webkit-appearance:none; width:11px; height:11px;
+  border-radius:50%; cursor:pointer;
+}
+.dual-range .range-min::-webkit-slider-thumb { background:#b060ff; }
+.dual-range .range-max::-webkit-slider-thumb { background:#ff9030; }
+.dual-range-lbl { min-width:68px; font-family:'Space Mono',monospace; font-size:10px; color:var(--text); }
+/* Color pickers */
+.color-pickers { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.cp-item {
+  display:flex; align-items:center; gap:4px;
+  font-family:'Space Mono',monospace; font-size:9px; color:var(--muted);
+}
+.cp-item input[type=color] {
+  width:22px; height:18px; border:1px solid var(--border); border-radius:4px;
+  background:none; cursor:pointer; padding:1px 2px;
+}
+.cp-item span { max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.btn-reset {
+  margin-left:auto; background:none; border:1px solid var(--border); color:var(--muted);
+  font-family:'Space Mono',monospace; font-size:9px; font-weight:700;
+  padding:3px 10px; border-radius:8px; cursor:pointer;
+  transition:color .2s,border-color .2s,background .2s;
+  white-space:nowrap; text-transform:uppercase; letter-spacing:.05em;
+}
+.btn-reset:hover { color:#fff; border-color:var(--accent2); background:rgba(255,107,107,.12); }
+.btn-reset:active { transform:scale(.96); }
 """
 
 # ── Embedded JavaScript ───────────────────────────────────────────────────────
@@ -490,8 +543,15 @@ function init3DPanel(cell,pd){
     }
   }
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
+  function setSkeletonColor(idx,col){
+    if(!objs[idx])return;
+    var c=new THREE.Color(col);
+    for(var _j=0;_j<objs[idx].jts.length;_j++){objs[idx].jts[_j].material.color.set(c);objs[idx].jts[_j].material.emissive.set(c);}
+    for(var _b=0;_b<objs[idx].bns.length;_b++){objs[idx].bns[_b].material.color.set(c);}
+    objs[idx].color=col;
+  }
   function resize(w,h){rdr.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix();}
-  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,objs:objs};
 }
 
 // ── 2-D panel ─────────────────────────────────────────────────────────────────
@@ -509,14 +569,16 @@ function init2DPanel(cell,pd){
     draw2D(ctx,cv.width,cv.height,items,edges2d);
   }
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
+  function setSkeletonColor(idx,col){if(objs[idx])objs[idx].color=col;}
   function resize(w,h){
     cv.width=w;cv.height=h;
     ns=normSkels2D(pd.skeletons,w,h);
-    // Preserve visibility state during resize
+    // Preserve visibility and color state during resize
     var oldVis=objs.map(function(o){return o.visible;});
-    objs=ns.map(function(s,i){return{normed:s.normed,color:s.color,visible:oldVis[i]!==undefined?oldVis[i]:true};});
+    var oldCol=objs.map(function(o){return o.color;});
+    objs=ns.map(function(s,i){return{normed:s.normed,color:oldCol[i]||s.color,visible:oldVis[i]!==undefined?oldVis[i]:true};});
   }
-  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,objs:objs};
 }
 
 // ── Image overlay panel ───────────────────────────────────────────────────────
@@ -572,48 +634,162 @@ function initImageOverlayPanel(cell,pd){
   }
   function setFrame(f){draw(f);}
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
+  function setSkeletonColor(idx,col){if(objs[idx])objs[idx].color=col;}
   function resize(w,h){
     cv.width=w;cv.height=h;
     if(!imageSpace&&pd.skeletons.length){
       ns=normSkels2D(pd.skeletons,w,h);
-      objs=ns.map(function(s,i){return{normed:s.normed,color:s.color,visible:objs[i]?objs[i].visible:true};});
+      objs=ns.map(function(s,i){return{normed:s.normed,color:objs[i]?objs[i].color:s.color,visible:objs[i]?objs[i].visible:true};});
     }
     draw(lastFrame);  // redraw after resize
   }
-  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,objs:objs};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,objs:objs};
 }
 
 // ── Per-row shared playback controller ───────────────────────────────────────
 function initRowController(ri,T,panels){
   var bar=document.getElementById('playbar-r'+ri); if(!bar)return;
+  var extras=document.getElementById('extras-r'+ri);
   var btnPrev=bar.querySelector('.btn-prev'),btnPlay=bar.querySelector('.btn-play'),
       btnNext=bar.querySelector('.btn-next'),btnLoop=bar.querySelector('.btn-loop'),
-      slider=bar.querySelector('.slider'),lbl=bar.querySelector('.frame-lbl');
+      slider=bar.querySelector('.main-slider'),lbl=bar.querySelector('.frame-lbl');
   slider.max=T-1;
+
+  // ── Frame range (dual-handle) ──────────────────────────────────────────────
+  var rStart=0, rEnd=T-1;
+  var rangeMin=extras?extras.querySelector('.range-min'):null;
+  var rangeMax=extras?extras.querySelector('.range-max'):null;
+  var rangeLbl=extras?extras.querySelector('.dual-range-lbl'):null;
+  if(rangeMin){rangeMin.max=T-1;rangeMin.value=0;}
+  if(rangeMax){rangeMax.max=T-1;rangeMax.value=T-1;}
+  function updateRangeLbl(){if(rangeLbl)rangeLbl.textContent=(rStart+1)+' – '+(rEnd+1);}
+  updateRangeLbl();
+  if(rangeMin) rangeMin.addEventListener('input',function(){
+    rStart=Math.min(parseInt(rangeMin.value),rEnd-1); rangeMin.value=rStart; updateRangeLbl();
+    if(cur<rStart)goTo(rStart);
+  });
+  if(rangeMax) rangeMax.addEventListener('input',function(){
+    rEnd=Math.max(parseInt(rangeMax.value),rStart+1); rangeMax.value=rEnd; updateRangeLbl();
+    if(cur>rEnd)goTo(rEnd);
+  });
+
+  // ── Playback speed ─────────────────────────────────────────────────────────
+  var speed=1.0;
+  var speedSlider=extras?extras.querySelector('.speed-slider'):null;
+  var speedLbl=extras?extras.querySelector('.speed-lbl'):null;
+  if(speedSlider) speedSlider.addEventListener('input',function(){
+    speed=parseFloat(speedSlider.value);
+    if(speedLbl) speedLbl.textContent=speed.toFixed(speed<1?2:1).replace(/\.?0+$/,'')+'x';
+  });
+
+  // ── Color pickers ──────────────────────────────────────────────────────────
+  var cpWrap=document.getElementById('color-pickers-r'+ri);
+  var colorInputs=[];   // keep refs for reset
+  var skelInfo=[];      // [{label, defaultColor}] – populated below
+  // applyColor must be defined outside if(cpWrap) so the reset handler can call it
+  var applyColor=function(idx,col){
+    for(var _pi=0;_pi<panels.length;_pi++){
+      if(panels[_pi].setSkeletonColor) panels[_pi].setSkeletonColor(idx,col);
+      if(panels[_pi].setFrame) panels[_pi].setFrame(cur);
+    }
+    var cells=document.querySelectorAll('[id^="cell-r'+ri+'-c"]');
+    for(var _ci=0;_ci<cells.length;_ci++){
+      var badges=cells[_ci].querySelectorAll('.skel-badge');
+      if(badges[idx]){
+        badges[idx].style.background=col+'22';
+        badges[idx].style.borderColor=col+'66';
+        badges[idx].style.color=col;
+      }
+    }
+  };
+  if(cpWrap){
+    var _row=ALL_ROWS[ri];
+    for(var pi=0;pi<_row.panels.length;pi++){
+      var pd=_row.panels[pi];
+      if(pd.skeletons){
+        for(var si=0;si<pd.skeletons.length;si++){
+          if(si>=skelInfo.length) skelInfo.push({label:pd.skeletons[si].label||('sk'+si),defaultColor:pd.skeletons[si].color||'#ffffff'});
+        }
+      }
+    }
+    for(var _si=0;_si<skelInfo.length;_si++){
+      (function(idx,info){
+        var item=document.createElement('div'); item.className='cp-item';
+        var inp=document.createElement('input'); inp.type='color'; inp.value=info.defaultColor;
+        var sp=document.createElement('span'); sp.textContent=info.label;
+        item.appendChild(inp); item.appendChild(sp); cpWrap.appendChild(item);
+        colorInputs.push(inp);
+        inp.addEventListener('input',function(){ applyColor(idx,inp.value); });
+      })(_si,skelInfo[_si]);
+    }
+  }
+
+  // ── Reset all ──────────────────────────────────────────────────────────────
+  var btnReset=document.getElementById('btn-reset-r'+ri);
+  if(btnReset) btnReset.addEventListener('click',function(){
+    // Stop playback
+    playing=false; btnPlay.innerHTML='&#9654;';
+    // Speed → 1x
+    speed=1.0;
+    if(speedSlider){speedSlider.value=1;}
+    if(speedLbl){speedLbl.textContent='1x';}
+    // Frame range → full
+    rStart=0; rEnd=T-1;
+    if(rangeMin){rangeMin.value=0;}
+    if(rangeMax){rangeMax.value=T-1;}
+    updateRangeLbl();
+    // Loop → on
+    looping=true; btnLoop.classList.add('active');
+    // Colors → originals
+    for(var _i=0;_i<skelInfo.length;_i++){
+      var origCol=skelInfo[_i].defaultColor;
+      colorInputs[_i].value=origCol;
+      applyColor(_i, origCol);
+    }
+    // Visibility → all shown
+    var cells=document.querySelectorAll('[id^="cell-r'+ri+'-c"]');
+    for(var _ci=0;_ci<cells.length;_ci++){
+      var badges=cells[_ci].querySelectorAll('.skel-badge');
+      var panel=PANEL_REGISTRY[ri][_ci];
+      for(var _bi=0;_bi<badges.length;_bi++){
+        badges[_bi].classList.remove('hidden');
+        if(panel&&panel.setVisibility) panel.setVisibility(_bi,true);
+      }
+    }
+    // Jump to range start
+    goTo(rStart);
+  });
+
+  // ── Playback state ─────────────────────────────────────────────────────────
   var cur=0,playing=false,looping=true;
   function goTo(f){
-    cur=((f%T)+T)%T; slider.value=cur; lbl.textContent=(cur+1)+' / '+T;
+    cur=Math.max(0,Math.min(T-1,f));
+    slider.value=cur; lbl.textContent=(cur+1)+' / '+T;
     for(var pi=0;pi<panels.length;pi++) panels[pi].setFrame(cur);
   }
   goTo(0);
-  var FPS=25,STEP=1/FPS,acc=0,prev=performance.now()/1000,wasP=false;
+  var FPS=25,acc=0,prev=performance.now()/1000,wasP=false;
   function tick(now){
     requestAnimationFrame(tick);
     var t=now/1000,dt=Math.min(t-prev,0.1); prev=t;
     if(playing){
       if(!wasP){acc=0;wasP=true;}
-      acc+=dt;
+      acc+=dt*speed;
+      var STEP=1/FPS;
       while(acc>=STEP){
         var n=cur+1;
-        if(n>=T&&!looping){playing=false;btnPlay.innerHTML='&#9654;';}else goTo(n);
-        acc-=STEP;
+        if(n>rEnd){
+          if(!looping){playing=false;btnPlay.innerHTML='&#9654;';acc=0;break;
+          }else{n=rStart;}
+        }
+        goTo(n); acc-=STEP;
       }
     } else wasP=false;
   }
   requestAnimationFrame(tick);
   btnPlay.addEventListener('click',function(){playing=!playing;btnPlay.innerHTML=playing?'&#9646;&#9646;':'&#9654;';});
-  btnPrev.addEventListener('click',function(){goTo(cur-1);});
-  btnNext.addEventListener('click',function(){goTo(cur+1);});
+  btnPrev.addEventListener('click',function(){goTo(cur-1<rStart?rEnd:cur-1);});
+  btnNext.addEventListener('click',function(){goTo(cur+1>rEnd?rStart:cur+1);});
   btnLoop.addEventListener('click',function(){looping=!looping;btnLoop.classList.toggle('active',looping);});
   slider.addEventListener('input',function(){goTo(parseInt(slider.value));});
 }
@@ -714,7 +890,7 @@ function bootstrap(){
 function getCurrentFrame(rowIdx){
   var bar=document.getElementById('playbar-r'+rowIdx);
   if(!bar)return 0;
-  var slider=bar.querySelector('.slider');
+  var slider=bar.querySelector('.main-slider');
   return slider?parseInt(slider.value):0;
 }
 
@@ -768,7 +944,7 @@ const __CELL_HEIGHT__={cell_height};
 """
 
 def _playbar_html(row_index: int, T: int) -> str:
-    """Return the playback bar HTML for a single row."""
+    """Return the playback bar + extras (speed/range/color) HTML for a single row."""
     return (
         f'''<div class="row-header">
   <div class="row-label" id="label-r{row_index}"></div>
@@ -776,10 +952,30 @@ def _playbar_html(row_index: int, T: int) -> str:
     <button class="btn-prev" title="Previous frame">&#9664;</button>
     <button class="btn-play" title="Play/Pause">&#9654;</button>
     <button class="btn-next" title="Next frame">&#9654;&#9654;</button>
-    <input type="range" class="slider" min="0" max="{T-1}" value="0"/>
+    <input type="range" class="main-slider" min="0" max="{T-1}" value="0"/>
     <span class="frame-lbl">1 / {T}</span>
     <button class="btn-loop active" title="Loop">&#9854;</button>
   </div>
+</div>
+<div class="row-extras" id="extras-r{row_index}">
+  <div class="ctrl-group">
+    <label>Speed</label>
+    <input type="range" class="speed-slider" min="0.1" max="3" step="0.05" value="1" style="width:80px"/>
+    <span class="ctrl-val speed-lbl">1x</span>
+  </div>
+  <div class="ctrl-group">
+    <label>Range</label>
+    <div class="dual-range">
+      <input type="range" class="range-min" min="0" max="{T-1}" value="0"/>
+      <input type="range" class="range-max" min="0" max="{T-1}" value="{T-1}"/>
+    </div>
+    <span class="dual-range-lbl">1 – {T}</span>
+  </div>
+  <div class="ctrl-group">
+    <label>Colors</label>
+    <div class="color-pickers" id="color-pickers-r{row_index}"></div>
+  </div>
+  <button class="btn-reset" id="btn-reset-r{row_index}" title="Reset speed, range, colors and visibility to defaults">&#8635; Reset</button>
 </div>'''
     )
 
