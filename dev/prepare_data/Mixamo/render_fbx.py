@@ -9,15 +9,7 @@ import mathutils
 import math
 import json
 import argparse
-import subprocess
-import concurrent.futures
 import warnings
-
-# Set environment variables for headless rendering BEFORE Blender imports
-# This helps with EGL errors when using Eevee in background mode
-if '--background' in sys.argv or '-b' in sys.argv:
-    os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'  # Force software rendering
-    os.environ['GALLIUM_DRIVER'] = 'llvmpipe'  # Use CPU-based OpenGL
 
 try:
     from tqdm import tqdm
@@ -124,9 +116,6 @@ def render_multiview(
         use_gpu=False,
         legacy_mode=False,
         render_engine='eevee',
-        only_cam_idx=None,     # if set, render only this camera index
-        frame_worker_idx=None, # if set, render only this chunk of frames
-        n_frame_workers=1,     # total number of frame chunks
 ):
     """
     Create num_cams cameras around the character (on a circle) and
@@ -149,8 +138,7 @@ def render_multiview(
 
     # Angles around the circle (yaw around Z)
     # e.g. 4 cams: 0°, 90°, 180°, 270°
-    cam_indices = [only_cam_idx] if only_cam_idx is not None else range(num_cams)
-    for cam_idx in cam_indices:
+    for cam_idx in range(num_cams):
         theta = 2.0 * math.pi * cam_idx / num_cams
 
         # In Blender: X right, Y forward, Z up.
@@ -174,11 +162,9 @@ def render_multiview(
         print(f"[#] Rendering camera {cam_idx} with offset {cam_offset} to {outpath}",
               flush=True)
 
-        # Only write JSON when rendering all frames (not a partial frame worker)
-        json_out = None if frame_worker_idx is not None else f"{outpath}/skeleton_cam_{cam_idx}.json"
         render_animation(
             outpath=f"{outpath}",
-            json_path=json_out,
+            json_path=f"{outpath}/skeleton_cam_{cam_idx}.json",
             armature_name=armature_name,
             follow_bone_name=follow_bone_name,
             resolution=resolution,
@@ -190,8 +176,6 @@ def render_multiview(
             use_gpu=use_gpu,
             legacy_mode=legacy_mode,
             render_engine=render_engine,
-            frame_worker_idx=frame_worker_idx,
-            n_frame_workers=n_frame_workers,
         )
 
 def render_animation(
@@ -208,8 +192,6 @@ def render_animation(
         use_gpu=False,
         legacy_mode=False,
         render_engine='eevee',
-        frame_worker_idx=None, # which frame chunk this worker handles (0-based)
-        n_frame_workers=1,     # total number of frame chunks
 ):
     os.makedirs(outpath, exist_ok=True)
     scene = bpy.context.scene
@@ -245,38 +227,13 @@ def render_animation(
     scene.render.resolution_percentage = 100
     
     if not legacy_mode:
-        if render_engine.lower() == 'eevee':
-            # Eevee engine - real-time, very fast
-            # Note: Eevee requires OpenGL context, which can cause issues in headless mode
-            try:
-                print(f"[#] Using Eevee engine with {render_samples} samples", flush=True)
-                scene.render.engine = 'BLENDER_EEVEE'
-                
-                # Eevee specific optimizations
-                scene.eevee.taa_render_samples = render_samples  # Lower samples = faster (default is 64)
-                scene.eevee.use_bloom = False
-                scene.eevee.use_ssr = False  # Screen space reflections
-                scene.eevee.use_gtao = False  # Ambient occlusion
-                scene.eevee.use_volumetric_shadows = False
-                scene.eevee.use_motion_blur = False
-                
-                # In background mode, Eevee uses CPU-based OpenGL (llvmpipe)
-                if bpy.app.background:
-                    print(f"[#] Background mode: Eevee will use software OpenGL (may be slower than Cycles)", flush=True)
-                    
-            except Exception as e:
-                print(f"[!] Failed to configure Eevee: {e}", flush=True)
-                print(f"[#] Falling back to Cycles engine", flush=True)
-                render_engine = 'cycles'
-            
-        elif render_engine.lower() == 'cycles':
+        if render_engine.lower() == 'cycles':
             # Cycles engine - ray-traced, higher quality
             print(f"[#] Using Cycles engine with {render_samples} samples {'(GPU)' if use_gpu else '(CPU)'}", flush=True)
             scene.render.engine = 'CYCLES'
             
             # Cycles specific settings
             scene.cycles.samples = render_samples  # Render samples (default is 128)
-            scene.cycles.preview_samples = render_samples
             
             # GPU configuration for Cycles
             if use_gpu:
@@ -339,10 +296,6 @@ def render_animation(
 
     # make sure Blender renders from THIS camera
     scene.camera = cam
-    # print(f"[#] Using camera: {cam.name}", flush=True)
-    # print(f"[#] Camera initial location: {cam.location}", flush=True)
-    # print(f"[#] Camera matrix_world:\n{cam.matrix_world}", flush=True)
-    # print(f"[#] Camera matrix_world:\n{cam.matrix_world.inverted()}", flush=True)
 
     # --- Small helpers ---
     def look_at(obj, target):
@@ -422,26 +375,19 @@ def render_animation(
 
     # --- Main loop over frames ---
     render_frames = list(range(start_frame, end_frame + 1, sub_sampling))
-
-    # Frame-worker slicing: each worker handles one chunk, ti_offset keeps filenames consistent
-    if n_frame_workers > 1 and frame_worker_idx is not None:
-        chunk_size = math.ceil(len(render_frames) / n_frame_workers)
-        ti_offset = frame_worker_idx * chunk_size
-        render_frames = render_frames[ti_offset : ti_offset + chunk_size]
-        print(f"[#] Frame worker {frame_worker_idx}/{n_frame_workers}: "
-              f"rendering {len(render_frames)} frames (offset ti={ti_offset})", flush=True)
-    else:
-        ti_offset = 0
-
-    for ti, frame in enumerate(render_frames):
+    
+    frame_iter = render_frames
+    
+    for ti, frame in enumerate(frame_iter):
         if use_wm_progress:
             wm.progress_update(ti)
 
         scene.frame_set(frame)
 
-        # Camera follow — set location + rotation then update once
+        # Camera follow
         bone_pos = get_bone_world_pos(arm, follow_bone_name)
         cam.location = bone_pos + cam_offset
+        bpy.context.view_layer.update()
         cam = look_at(cam, bone_pos)
         bpy.context.view_layer.update()
 
@@ -484,9 +430,9 @@ def render_animation(
                               for r in range(4)])
 
         # ----- Render image -----
-        scene.render.filepath = os.path.join(outpath, f"frame{ti + ti_offset:04d}.png")
+        scene.render.filepath = os.path.join(outpath, f"frame{ti:04d}.png")
         bpy.ops.render.render(write_still=True)
-
+        
         print(f"[#] Rendered frame {frame}/{end_frame} ({ti+1}/{len(render_frames)})", flush=True)
 
     if use_wm_progress:
@@ -543,22 +489,9 @@ if __name__ == "__main__":
     parser.add_argument('--img_height', type=int, default=512, help='Image height')
     parser.add_argument('--img_width', type=int, default=512, help='Image width')
     parser.add_argument('--render_samples', type=int, default=16, help='Number of render samples (lower=faster, default=16)')
-    parser.add_argument('--render_engine', type=str, default='cycles', choices=['eevee', 'cycles'], 
-                        help='Render engine: eevee (fast, requires display/OpenGL) or cycles (high quality, works headless)')
+    parser.add_argument('--render_engine', type=str, default='cycles', choices=['eevee', 'cycles'], help='Render engine: eevee (fast) or cycles (high quality)')
     parser.add_argument('--use_gpu', action='store_true', help='Enable GPU rendering (works with both Eevee and Cycles)')
     parser.add_argument('--legacy_mode', action='store_true', help='Use legacy rendering mode (slower, for comparison)')
-    # Parallel-rendering args
-    parser.add_argument('--blender_exe', type=str, default=None,
-                        help='Path to Blender executable. When set, cameras and/or frame chunks are '
-                             'rendered in separate Blender subprocesses running in parallel.')
-    parser.add_argument('--n_workers', type=int, default=None,
-                        help='Max concurrent Blender subprocesses (default: n_cam * n_frame_workers)')
-    parser.add_argument('--n_frame_workers', type=int, default=1,
-                        help='Split frames into this many parallel chunks per camera (default: 1)')
-    parser.add_argument('--cam_idx', type=int, default=None,
-                        help='Render only this camera index. Set automatically by the parallel dispatcher.')
-    parser.add_argument('--frame_worker_idx', type=int, default=None,
-                        help='Which frame chunk to render. Set automatically by the parallel dispatcher.')
     args = parser.parse_args(argv)
 
 
@@ -577,119 +510,26 @@ if __name__ == "__main__":
     print(f"[#] Render samples: {args.render_samples}", flush=True)
     print(f"[#] GPU rendering: {args.use_gpu}", flush=True)
     print(f"[#] Legacy mode: {args.legacy_mode}", flush=True)
-    print(f"[#] Blender exe (parallel): {args.blender_exe}", flush=True)
-
-    # -------------------------------------------------------------------------
-    # Helper: reconstruct argv list from parsed args (for subprocess dispatch)
-    # -------------------------------------------------------------------------
-    def build_subprocess_argv(fbx_file, cam_idx, frame_worker_idx=None):
-        """Build the argv that goes after '--' for a single-camera/frame-chunk subprocess."""
-        a = [
-            '--fbx_path',          fbx_file,
-            '--out_dir',           args.out_dir,
-            '--n_cam',             str(args.n_cam),
-            '--cam_height',        str(args.cam_height),
-            '--cam_radius',        str(args.cam_radius),
-            '--follow_bone',       args.follow_bone,
-            '--start_motion_frame',str(args.start_motion_frame),
-            '--sub_sampling',      str(args.sub_sampling),
-            '--img_height',        str(args.img_height),
-            '--img_width',         str(args.img_width),
-            '--render_samples',    str(args.render_samples),
-            '--render_engine',     args.render_engine,
-            '--n_frame_workers',   str(args.n_frame_workers),
-            '--cam_idx',           str(cam_idx),
-        ]
-        if frame_worker_idx is not None:
-            a += ['--frame_worker_idx', str(frame_worker_idx)]
-        if args.char_color: a += ['--char_color', args.char_color]
-        if args.use_gpu:    a += ['--use_gpu']
-        if args.legacy_mode: a += ['--legacy_mode']
-        return a
-
-    # -------------------------------------------------------------------------
-    # Parallel subprocess dispatch
-    # -------------------------------------------------------------------------
-    def run_subprocess(blender_exe, script_path, fbx_file, cam_idx, frame_worker_idx=None):
-        """Launch one Blender process for a single camera + optional frame chunk."""
-        sub_argv = build_subprocess_argv(fbx_file, cam_idx, frame_worker_idx)
-        cmd = [blender_exe, '--background', '--python', script_path, '--'] + sub_argv
-        tag = f"cam {cam_idx}" + (f" / frame_worker {frame_worker_idx}" if frame_worker_idx is not None else "")
-        print(f"[#] [{tag}] Starting subprocess", flush=True)
-        result = subprocess.run(cmd, text=True, capture_output=True)
-        if result.returncode != 0:
-            print(f"[!] [{tag}] Subprocess failed (rc={result.returncode})", flush=True)
-            if result.stderr:
-                print(f"[!] [{tag}] Error output:\n{result.stderr[-1000:]}", flush=True)  # Last 1000 chars
-        else:
-            print(f"[#] [{tag}] Subprocess finished.", flush=True)
-        return (cam_idx, frame_worker_idx), result.returncode
-
     scene = bpy.context.scene
     scene.render.image_settings.file_format = 'PNG'
-
-    if args.blender_exe and args.cam_idx is None:
-        # ---- Parallel mode: cameras × frame-chunks ----
-        script_path = os.path.abspath(__file__)
-        n_frame_w = args.n_frame_workers  # shorthand
-        total_jobs = args.n_cam * n_frame_w
-        n_workers = args.n_workers or total_jobs
-        print(f"[#] Parallel mode: {args.n_cam} cameras × {n_frame_w} frame workers "
-              f"= {total_jobs} jobs, {n_workers} concurrent", flush=True)
-
-        for f in fbx:
-            print(f"[#] FBX: {f} — dispatching {total_jobs} subprocesses", flush=True)
-            # Build all (cam_idx, frame_worker_idx) pairs
-            job_pairs = [
-                (ci, fwi if n_frame_w > 1 else None)
-                for ci in range(args.n_cam)
-                for fwi in (range(n_frame_w) if n_frame_w > 1 else [None])
-            ]
-            
-            completed_count = 0
-            with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
-                futures = [
-                    pool.submit(run_subprocess,
-                                args.blender_exe, script_path, f, ci, fwi)
-                    for ci, fwi in job_pairs
-                ]
-                
-                # Use tqdm if available for progress tracking
-                iterator = concurrent.futures.as_completed(futures)
-                if HAS_TQDM:
-                    iterator = tqdm(iterator, total=len(futures), desc="Rendering jobs")
-                
-                for fut in iterator:
-                    (ci, fwi), rc = fut.result()
-                    completed_count += 1
-                    tag = f"cam {ci}" + (f" / frame_worker {fwi}" if fwi is not None else "")
-                    status = "OK" if rc == 0 else f"FAILED (rc={rc})"
-                    print(f"[#] [{completed_count}/{total_jobs}] {tag} → {status}", flush=True)
-
-    else:
-        # ---- Sequential / single-camera mode ----
-        # (single-camera mode is entered when --cam_idx is set by a subprocess)
-        for f in fbx:
-            clear_scene()
-            load_fbx(f, char_color=args.char_color)
-            create_camera()
-            ensure_sun_light()
-            setup_background()
-            render_multiview(
-                base_outpath=f"{args.out_dir}/{os.path.basename(f).split('.')[0]}/",
-                armature_name="Armature",
-                follow_bone_name=args.follow_bone,
-                resolution=(args.img_width, args.img_height),
-                num_cams=args.n_cam,
-                radius=args.cam_radius,
-                height=args.cam_height,
-                start_motion_frame=args.start_motion_frame,
-                sub_sampling=args.sub_sampling,
-                render_samples=args.render_samples,
-                use_gpu=args.use_gpu,
-                legacy_mode=args.legacy_mode,
-                render_engine=args.render_engine,
-                only_cam_idx=args.cam_idx,
-                frame_worker_idx=args.frame_worker_idx,
-                n_frame_workers=args.n_frame_workers,
-            )
+    for f in fbx:
+        clear_scene()
+        load_fbx(f, char_color=args.char_color)
+        create_camera()
+        ensure_sun_light()
+        setup_background()
+        render_multiview(
+            base_outpath=f"{args.out_dir}/{os.path.basename(f).split('.')[0]}/",
+            armature_name="Armature",
+            follow_bone_name=args.follow_bone,   # or "mixamorig:Hips"
+            resolution=(args.img_width, args.img_height),
+            num_cams=args.n_cam,
+            radius=args.cam_radius,
+            height=args.cam_height,
+            start_motion_frame=args.start_motion_frame,
+            sub_sampling=args.sub_sampling,
+            render_samples=args.render_samples,
+            use_gpu=args.use_gpu,
+            legacy_mode=args.legacy_mode,
+            render_engine=args.render_engine,
+        )
