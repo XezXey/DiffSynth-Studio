@@ -2,10 +2,10 @@ import torch as th
 from lightning.pytorch.utilities import rank_zero_only
 import wandb
 import lightning as L
+from model_utils import unproject_torch, map_to_joint, unpatchify
 import numpy as np
 from dataset import DitFeaturesDataset
 from model import JointVAE38, Head
-from einops import rearrange
 from diffsynth.diffusion.vis import MultiSkeleton2D3DAnimator
 import glob, os, plotly, argparse
 
@@ -41,7 +41,6 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.save_steps = save_steps
         self.predict_motion_dt = predict_motion_dt
         
-
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
         self.make_parameters_trainable(self.joint_head)
@@ -59,12 +58,6 @@ class TrainOnDiTFeatures(L.LightningModule):
         optimizer = th.optim.AdamW(list(self.head.parameters()) + list(self.joint_vae.parameters()), lr=self.lr)
         return optimizer
 
-    def unpatchify(self, x, grid_size, patch_size):
-        return rearrange(
-            x, 'b (f h w) (x y z c) -> b c (f x) (h y) (w z)',
-            f=grid_size[0], h=grid_size[1], w=grid_size[2], 
-            x=patch_size[0], y=patch_size[1], z=patch_size[2]
-        )
     
     def validation_step(self, batch, batch_idx):
         if self.global_rank != 0:
@@ -118,36 +111,28 @@ class TrainOnDiTFeatures(L.LightningModule):
         grid_size = inputs["grid_size"]
         patch_size = inputs["patch_size"]
 
-        out_head = self.head(inp)  # 1, out_dim, H', W
-        # print(out_head.shape)
+        out_head = self.head(inp)  # 1, out_dim, H, W
         out_unpatched = self.unpatchify(out_head, grid_size, patch_size)  # 1, out_dim, T, H, W
-        # print(out_unpatched.shape)
         out_decoded = self.joint_vae.decode(out_unpatched, device='cuda')  # 1, J*3, T, 1, 1
-        # print(out_decoded.shape)
         out_joints_map = self.joint_head(out_decoded)  # 1, J*2, T, 1, 1
-        # print(out_joints_map.shape)
 
-        pixel_coords, depth = self.map_to_joint(out_joints_map)  # pixel_coords: (1, J, T, 2); depth: (1, J, T, 1)
-        # print(pixel_coords.shape, depth.shape)
-
-        # print(inputs["cams_intr"].shape)
-        # print(inputs["cams_extr"].shape)
+        pixel_coords, depth = self.map_to_joint(self.J, out_joints_map)  # pixel_coords: (1, J, T, 2); depth: (1, J, T, 1)
+        
         fx, fy, cx, cy = inputs["cams_intr"].squeeze(0) # (4)
         org_h = cy * 2.0 + 1
         org_w = cx * 2.0 + 1
         E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
-        # print(th.is_tensor(E_bl), E_bl.shape, E_bl.dtype, E_bl.ndim)
 
-        m3d_gt = inputs["joints_3d"].squeeze(0)  # T, J, 3
-        m2d_gt = inputs["joints_2d"].squeeze(0)  # T, J, 3
-        m2d_gt = m2d_gt[..., :2]    # only keep (u, v)
-        assert m3d_gt.shape[0] == m2d_gt.shape[0], "Number of frames mismatch between 3D and 2D joints."
-        assert m3d_gt.shape[1] == m2d_gt.shape[1], "Number of joints mismatch between 3D and 2D joints."
+        j3d_gt = inputs["joints_3d"].squeeze(0)  # 1, T, J, 3 -> T, J, 3 (xyz)
+        j2d_gt = inputs["joints_2d"].squeeze(0)  # 1, T, J, 3 -> T, J, 3 (uvd)
+        j2d_gt = j2d_gt[..., :2] # uv gt
+        jd_gt = j2d_gt[..., 2:3] # depth gt
+        assert j3d_gt.shape[0] == j2d_gt.shape[0], "Number of frames mismatch between 3D and 2D joints."
+        assert j3d_gt.shape[1] == j2d_gt.shape[1], "Number of joints mismatch between 3D and 2D joints."
         
-        
-        m2d_gt[..., 0] = m2d_gt[..., 0] / (org_w - 1)     # normalize to [0,1]
-        m2d_gt[..., 1] = m2d_gt[..., 1] / (org_h - 1)   # normalize to [0,1]
-        mask_2d = th.logical_and(m2d_gt >= 0.0, m2d_gt <= 1.0)
+        j2d_gt[..., 0] = j2d_gt[..., 0] / (org_w - 1)     # normalize to [0,1]
+        j2d_gt[..., 1] = j2d_gt[..., 1] / (org_h - 1)   # normalize to [0,1]
+        mask = th.logical_and(j2d_gt[..., :2] >= 0.0, j2d_gt[..., :2] <= 1.0).all(dim=-1)   # .all(dim=-1) to ensure both u and v are valid (squeezed last dimension)
         
         h = inputs["height"]
         w = inputs["width"]
@@ -159,28 +144,30 @@ class TrainOnDiTFeatures(L.LightningModule):
         else: 
             d = d
         
-        motion_pred_2d = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
-        motion_pred_3d = self.unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
-        training_target_3d = m3d_gt
-        assert motion_pred_3d.shape == training_target_3d.shape, f"motion_pred shape {motion_pred_3d.shape} does not match training_target shape {training_target_3d.shape}"
-        assert motion_pred_2d.shape == m2d_gt.shape, f"motion_pred_2d shape {motion_pred_2d.shape} does not match gt_motion_2d shape {m2d_gt.shape}"
+        j2d_pred = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
+        j3d_pred = unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
+        assert j3d_pred.shape == j3d_gt.shape, f"j3d_pred shape {j3d_pred.shape} does not match training_target shape {training_target_3d.shape}"
+        assert j2d_pred.shape == j2d_gt.shape, f"j2d_pred shape {j2d_pred.shape} does not match gt_j2d shape {j2d_gt.shape}"
 
-        loss_3d = th.nn.functional.mse_loss(motion_pred_3d.float(), training_target_3d.float())
-        loss_2d = th.nn.functional.mse_loss(motion_pred_2d.float(), m2d_gt.float()) * mask_2d.float()
-        loss_2d = loss_2d.sum() / (mask_2d.float().sum() + 1e-8)
-        loss = loss_3d + loss_2d * 1000.0
+        loss_3d = th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float())
+        loss_3d = loss_3d.sum() / (mask.float().sum() + 1e-8)  # average over valid joints only
+        loss_2d = th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float())
+        loss_2d = loss_2d.sum() / (mask.float().sum() + 1e-8)
+        loss_depth = th.nn.functional.mse_loss(d.float(), jd_gt.float())
+        loss_depth = loss_depth.sum() / (mask.float().sum() + 1e-8)
+        loss = loss_3d + loss_2d * 1000.0 + loss_depth * 1000.0
 
         output_dict = {
-            "motion_pred_3d": motion_pred_3d.detach().cpu(),
-            "motion_gt_3d": training_target_3d.detach().cpu(),
-            "motion_pred_2d": motion_pred_2d.detach().cpu(),
-            "motion_gt_2d": m2d_gt.detach().cpu(),
+            "motion_pred_3d": j3d_pred.detach().cpu(),
+            "motion_gt_3d": j3d_gt.detach().cpu(),
+            "motion_pred_2d": j2d_pred.detach().cpu(),
+            "motion_gt_2d": j2d_gt.detach().cpu(),
             "loss_3d": loss_3d.item(),
             "loss_2d": loss_2d.item(),
             "joint_names": inputs["joint_names"],
             "bones": inputs["bones"]
         }
-        loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d}
+        loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d, "loss_depth": loss_depth}
 
         return loss_dict, output_dict
 
@@ -204,12 +191,6 @@ class TrainOnDiTFeatures(L.LightningModule):
             self._plot_results(self.global_step)
         if (self.global_step) % (self.save_steps) == 0:
             self._save_model(self.global_step)
-
-    # @rank_zero_only
-    # def on_train_epoch_end(self):
-    #     """Called at the end of each epoch. Plot final state of the epoch."""
-    #     self._plot_results(self.global_step)
-    #     self._save_model(self.global_step)
 
     @rank_zero_only
     def _plot_results(self, step):
@@ -239,113 +220,5 @@ class TrainOnDiTFeatures(L.LightningModule):
         save_path = os.path.join(self.log_dir, "ckpt", f"model_step_{step}.pth")
         th.save(self.state_dict(), save_path)
 
-    def unproject_torch(self, fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
-        """
-        Args:
-            fx, fy, cx, cy: scalars (python float or torch scalar)
-            E_bl: (T, 4, 4) world -> Blender camera extrinsics (torch.Tensor)
-            j2d:  (T, J, 3) where last dim is (u, v, depth) (torch.Tensor)
-                IMPORTANT: depth must be consistent with your projection convention
-            eps: small constant for numeric safety
 
-        Returns:
-            j3d_unproj: (T, J, 3) unprojected 3D points in world coordinates
-        """
 
-        assert E_bl.ndim == 3 and E_bl.shape[-2:] == (4, 4), f"E_bl must be (T,4,4), got {E_bl.shape}"
-        assert j2d.ndim == 3 and j2d.shape[-1] == 3, f"j2d must be (T,J,3), got {j2d.shape}"
-
-        device = j2d.device
-        dtype  = j2d.dtype
-        T, J, _ = j2d.shape
-
-        # Intrinsics and inverse
-        K = th.tensor(
-            [[fx, 0.0, cx],
-            [0.0, fy, cy],
-            [0.0, 0.0, 1.0]],
-            device=device, dtype=dtype
-        )
-        K_inv = th.linalg.inv(K)  # (3,3)
-
-        # Blender -> OpenCV camera coords
-        T_bl_to_cv = th.tensor(
-            [[1.0,  0.0,  0.0, 0.0],
-            [0.0, -1.0,  0.0, 0.0],
-            [0.0,  0.0, -1.0, 0.0],
-            [0.0,  0.0,  0.0, 1.0]],
-            device=device, dtype=dtype
-        )
-
-        # World -> OpenCV camera extrinsics and its inverse
-        E_cv = T_bl_to_cv.unsqueeze(0) @ E_bl.to(device=device, dtype=dtype)  # (F,4,4)
-        E_cv_inv = th.linalg.inv(E_cv)  # (F,4,4)
-
-        # Unproject pixels -> camera coordinates
-        u = j2d[..., 0]            # (F,J)
-        v = j2d[..., 1]            # (F,J)
-        depth = j2d[..., 2]        # (F,J)
-
-        # Optional safety: avoid exactly zero depth
-        depth_safe = th.where(depth.abs() < eps, depth.new_full((), eps), depth)
-
-        # pixel_h = [u*depth, v*depth, depth]  (F,J,3)
-        pixel_h = th.stack([u * depth_safe, v * depth_safe, depth_safe], dim=-1)
-
-        # rays_cam = K_inv @ pixel_h  (F,J,3)
-        rays_cam = th.einsum("ab,fjb->fja", K_inv, pixel_h)
-
-        # Homogeneous (F,J,4)
-        ones = th.ones((T, J, 1), device=device, dtype=dtype)
-        rays_cam_h = th.cat([rays_cam, ones], dim=-1)
-
-        # Camera -> world (F,J,4)
-        world_pts = th.einsum("fab,fjb->fja", E_cv_inv, rays_cam_h)
-
-        # (F,J,3)
-        j3d_unproj = world_pts[..., :3]
-        return j3d_unproj
-
-    def map_to_joint(self, joint_map):
-        """
-        Inputs: 
-            joint_map: (b, c, t, h, w)
-                - c = 2 * J (heatmap and depth channels)
-        Returns:
-            pixel_coords: (b, J, t, 2) - x,y pixel coordinates
-            depth: (b, J, t) - depth values
-        """
-        b, c, t, h, w = joint_map.shape
-        joint_map_list = th.chunk(joint_map, self.J, dim=1)  # List of (b, 2, t, h, w), length J
-        all_pixel_coords = []
-        all_depths = []
-        for map in joint_map_list:
-            heatmap = map[:, 0, :, :, :]  # (b, t, h, w)
-            depth_map = map[:, 1, :, :, :]  # (b, t, h, w)
-
-            # Softmax over spatial dimensions to get probabilities
-            heatmap_flat = heatmap.view(b, t, -1)  # (b, t, h*w)
-            prob_map = th.softmax(heatmap_flat, dim=-1).view(b, t, h, w)  # (b, t, h, w)
-
-            # Create coordinate grids
-            y_coords, x_coords = th.meshgrid(th.linspace(0, 1, h, device=joint_map_list[0].device), th.linspace(0, 1, w, device=joint_map_list[0].device), indexing='ij')
-
-            y_coords = y_coords.view(1, 1, h, w).expand(b, t, h, w)
-            x_coords = x_coords.view(1, 1, h, w).expand(b, t, h, w)
-
-            x_pixel = th.sum(prob_map * x_coords, dim=(2, 3))
-            y_pixel = th.sum(prob_map * y_coords, dim=(2, 3)) 
-
-            pixel_coords = th.stack([x_pixel, y_pixel], dim=-1)  # (b, t, 2)
-
-            # Compute expected depth
-            depth = th.sum(prob_map * depth_map, dim=(2, 3))  # (b, t)
-            depth = depth.unsqueeze(-1)  # (b, t, 1)
-
-            all_pixel_coords.append(pixel_coords[:, None, :, :])  # (b, 1, t, 2)
-            all_depths.append(depth[:, None, :, :])  # (b, 1, t, 1)
-        
-        pixel_coords = th.cat(all_pixel_coords, dim=1)  # (b, J, t, 2)
-        depth = th.cat(all_depths, dim=1)  # (b, J, t, 1)
-
-        return pixel_coords, depth
