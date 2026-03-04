@@ -1,7 +1,7 @@
 import os
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--blender_path', default='/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender', type=str, help='Path to Blender executable')
+parser.add_argument('--blender_bin', default='/host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender', type=str, help='Path to Blender executable')
 parser.add_argument('--fbx', type=str, required=True, help='Path to input FBX file')
 parser.add_argument('--out_dir', type=str, required=True, help='Output directory')
 parser.add_argument('--n_cam', type=int, default=1, help='Number of cameras to create')
@@ -13,6 +13,8 @@ parser.add_argument('--img_height', type=int, default=512, help='Image height')
 parser.add_argument('--run_blender', action='store_true', default=False, help='Enable blender execution')
 parser.add_argument('--run_projection', action='store_true', default=False, help='Enable 2D projection after rendering')
 parser.add_argument('--use_gpu', action='store_true', default=False, help='Use GPU for rendering in Blender')
+parser.add_argument('--cam_workers', type=int, default=1, help='Number of worker processes for camera rendering')
+parser.add_argument('--frame_workers', type=int, default=8, help='Number of worker processes for frame rendering')
 parser.add_argument('--only_body_joints', action='store_true', default=False, help='Only render body joints without the fingers')
 parser.add_argument('--skip_plot_map', action='store_true', default=False, help='Skip plotting the 2D joint heatmap and skeleton overlay on the rendered images')
 args = parser.parse_args()
@@ -30,9 +32,13 @@ if __name__ == "__main__":
         cam_radius = f"--cam_radius {args.cam_radius}"
         img_width = f"--img_width {args.img_width}"
         img_height = f"--img_height {args.img_height}"
-        render_settings = f"{n_cam} {follow_bone} {cam_height} {cam_radius} {img_width} {img_height}"
+        blender_bin = f"--blender_bin \"{args.blender_bin}\""
+        cam_workers = f"--cam_workers {args.cam_workers}"
+        frame_workers = f"--frame_workers {args.frame_workers}"
+        render_settings = f"{n_cam} {follow_bone} {cam_height} {cam_radius} {img_width} {img_height} {blender_bin} {cam_workers} {frame_workers}"
 
-        blender_cmd = f"{args.blender_path} -b --factory-startup -noaudio -P ./render_fbx.py -- {fbx} {out_dir} {render_settings}"
+        # blender_cmd = f"{args.blender_path} -b --factory-startup -noaudio -P ./render_fbx.py -- {fbx} {out_dir} {render_settings}"
+        blender_cmd = f"python ./render_pipeline.py -- {fbx} {out_dir} {render_settings}"
         blender_cmd += " --use_gpu" if args.use_gpu else ""
         print(blender_cmd)
         os.system(blender_cmd)
@@ -41,7 +47,7 @@ if __name__ == "__main__":
     if args.run_projection:
         # After rendering, run the 2D projection
 
-        projection_cmd = f"python ./project_2d.py --path \"{args.out_dir}\""
+        projection_cmd = f"python ./blender_projection.py --path \"{args.out_dir}\""
         projection_cmd += " --only_body_joints" if args.only_body_joints else ""
         projection_cmd += " --skip_plot_map" if args.skip_plot_map else ""
         os.system(projection_cmd)

@@ -58,18 +58,18 @@ if _HERE not in sys.path:
 import bpy
 import mathutils
 
-from lib.scene_utils import (
+from render_utils.scene_utils import (
     clear_scene, load_fbx, create_default_camera,
     ensure_sun_light, setup_white_background,
 )
-from lib.render_engine import configure_render_engine
-from lib.bone_utils import resolve_follow_bone
-from lib.skeleton_export import (
+from render_utils.render_engine import configure_render_engine
+from render_utils.bone_utils import resolve_follow_bone
+from render_utils.skeleton_export import (
     compute_static_rig_info,
     export_skeleton_for_camera,
     save_skeleton_json,
 )
-from lib.progress import create_tracker
+from render_utils.progress import create_tracker
 
 
 # ---------------------------------------------------------------------------

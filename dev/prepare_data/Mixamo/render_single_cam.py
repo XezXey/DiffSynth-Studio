@@ -45,12 +45,12 @@ if _HERE not in sys.path:
 import bpy
 import mathutils
 
-from lib.scene_utils import (
+from render_utils.scene_utils import (
     clear_scene, load_fbx, create_default_camera,
     ensure_sun_light, setup_white_background,
 )
-from lib.render_engine import configure_render_engine
-from lib.bone_utils import resolve_follow_bone
+from render_utils.render_engine import configure_render_engine
+from render_utils.bone_utils import resolve_follow_bone
 
 
 

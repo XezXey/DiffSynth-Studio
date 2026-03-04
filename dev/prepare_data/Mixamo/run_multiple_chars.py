@@ -47,7 +47,7 @@ def _parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # paths
-    p.add_argument("--blender_path", default="/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender", type=str,
+    p.add_argument("--blender_bin", default="/host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender", type=str,
                    help="Path to Blender executable.")
     p.add_argument("--input_dir",  required=True,
                    help="Directory containing character subdirectories with FBX files.")
@@ -73,6 +73,10 @@ def _parse_args():
                    help="Render body joints only (no fingers).")
     p.add_argument("--skip_plot_map",     action="store_true", default=False,
                    help="Skip 2-D joint heatmap / skeleton overlay plotting.")
+    p.add_argument("--cam_workers",       type=int, default=1,
+                   help="Number of worker processes for camera rendering in Blender.")
+    p.add_argument("--frame_workers",     type=int, default=8,
+                   help="Number of worker processes for frame rendering in Blender.")
     return p.parse_args()
 
 
@@ -89,7 +93,9 @@ def _build_command(motion_file: str, char_output_dir: str, args) -> str:
         f" --cam_radius {args.cam_radius}"
         f" --img_width {args.img_width}"
         f" --img_height {args.img_height}"
-        f" --blender_path \"{args.blender_path}\""
+        f" --blender_bin \"{args.blender_bin}\""
+        f" --cam_workers {args.cam_workers}"
+        f" --frame_workers {args.frame_workers}"
     )
     cmd = f'python run.py --fbx "{motion_file}" --out_dir "{char_output_dir}" {render}'
     if args.use_gpu:          cmd += " --use_gpu"
