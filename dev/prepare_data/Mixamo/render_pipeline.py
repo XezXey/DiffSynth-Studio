@@ -380,7 +380,7 @@ def render_parallel(
 
     # Run with progress tracking
     total = len(jobs)
-    tracker = create_tracker(dict(dir_expectations), poll_interval=2.0)
+    tracker = create_tracker(dict(dir_expectations), poll_interval=7.0)
     tracker.start()
 
     try:

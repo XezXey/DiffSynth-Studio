@@ -175,7 +175,7 @@ def step1_render(a: argparse.Namespace) -> None:
     if a.run_projection:   flags += " --run_projection"
     if a.only_body_joints: flags += " --only_body_joints"
     if a.skip_plot_map:    flags += " --skip_plot_map"
-    if a.host_prefix == "/host": flags += " --blender_path /host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender"
+    if a.host_prefix == "/host": flags += " --blender_bin /host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender"
 
     cmd = (
         f'python run_multiple_chars.py'
@@ -296,7 +296,7 @@ def main() -> None:
     if not a.skip_precompute:
         step5_precompute(a)
         completed.append("5 – precompute")
-
+    
     print("\n" + "="*70)
     print("  PIPELINE COMPLETE")
     for s in completed:

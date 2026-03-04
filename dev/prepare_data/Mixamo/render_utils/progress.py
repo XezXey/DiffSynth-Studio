@@ -29,6 +29,7 @@ import os
 import threading
 import time
 from collections import defaultdict
+from datetime import datetime
 
 try:
     from rich.progress import (
@@ -197,7 +198,7 @@ class FrameProgressTracker:
 class PlainProgressTracker:
     """Same interface as FrameProgressTracker but uses plain print()."""
 
-    def __init__(self, dir_expectations: dict, poll_interval: float = 5.0):
+    def __init__(self, dir_expectations: dict, poll_interval: float = 15.0):
         self.dir_expectations = dir_expectations
         self.poll_interval = poll_interval
         self._stop_event = threading.Event()
@@ -238,7 +239,7 @@ class PlainProgressTracker:
             min(count_rendered_frames(d), exp)
             for d, exp in self.dir_expectations.items()
         )
-        print(f"[progress] {total_done}/{total_expected} frames rendered",
+        print(f"[progress - {datetime.now().strftime('%H:%M:%S')}] {total_done}/{total_expected} frames rendered",
               flush=True)
 
     def _poll_loop(self):
@@ -254,10 +255,21 @@ class PlainProgressTracker:
 def create_tracker(dir_expectations: dict, poll_interval: float = 2.0):
     """
     Return a FrameProgressTracker (rich) or PlainProgressTracker (fallback).
+
+    Rich's live display requires a real TTY.  When stdout is piped (e.g. this
+    process is a subprocess of another script that captures output), we fall
+    back to PlainProgressTracker so that plain-text progress lines are emitted
+    to stdout and appear in the parent's rolling log window.
     """
-    if HAS_RICH:
-        print("[progress] Using rich for progress display", flush=True)
+    import sys
+    is_tty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    if HAS_RICH and is_tty:
         return FrameProgressTracker(dir_expectations, poll_interval)
     else:
-        print("[progress] rich not installed — using plain-text output", flush=True)
+        if HAS_RICH and not is_tty:
+            print("[progress] stdout is not a TTY — using plain-text output "
+                  "(rich live display requires a real terminal)", flush=True)
+        else:
+            print("[progress] rich not installed — using plain-text output",
+                  flush=True)
         return PlainProgressTracker(dir_expectations, poll_interval)
