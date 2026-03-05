@@ -5,7 +5,7 @@ from trainer import TrainOnDiTFeatures
 import os
 import glob
 import argparse
-from dataset import DitFeaturesDataset, DitFeaturesByMotionNameDataset, MotionValidationCallback
+from dataset import DitFeaturesDataset, DitFeaturesByMotionNameDataset
 from lightning.pytorch.loggers import WandbLogger
 from mylogger.logger import init_logger
 

@@ -84,20 +84,33 @@ class TrainOnDiTFeatures(L.LightningModule):
                 ds, batch_size=1, collate_fn=ds.collate_fn_
             )
 
+            motion_pred_dict = {}
+            motion_gt_dict = {}
             for batch_idx, batch in enumerate(loader):
                 with th.no_grad():
                     batch = {k: v.to(self.device) if isinstance(v, th.Tensor) else v for k, v in batch.items()}
                     pred_dict = self.forward_pass(batch, batch_idx)
-                    for k in pred_dict:
-                        print(k, pred_dict[k].shape if isinstance(pred_dict[k], th.Tensor) else type(pred_dict[k]))
-                    exit()
-                    _, acc_dict, pred_dict = self.compute_loss(pred_dict, batch)
-                    self._val_loss_dict["loss"].append(acc_dict["rmse_3d"])
-                    self._val_loss_dict["loss_3d"].append(acc_dict["rmse_3d"])
-                    self._val_loss_dict["loss_2d"].append(acc_dict["rmse_2d"])
-                    self._val_loss_dict["loss_depth"].append(acc_dict["rmse_depth"])
-                    if len(self._val_last_plot_data) < self.val_plot_max_batches:
-                        self._val_last_plot_data.append(pred_dict)
+                    if batch_idx == 0:
+                        motion_pred_dict = pred_dict
+                        motion_gt_dict = {
+                            "joints_3d": batch["joints_3d"].squeeze(0), "joints_2d": batch["joints_2d"].squeeze(0), 
+                            "cams_intr": batch["cams_intr"], "cams_extr": batch["cams_extr"],
+                            "height": batch["height"], "width": batch["width"],
+                        }
+                    else:
+                        for k in ["motion_pred_3d", "motion_pred_2d", "motion_pred_d"]:
+                            motion_pred_dict[k] = th.cat([motion_pred_dict[k], pred_dict[k]], dim=0)  # concatenate along time dimension
+                        motion_gt_dict["joints_3d"] = th.cat([motion_gt_dict["joints_3d"], batch["joints_3d"].squeeze(0)], dim=0)
+                        motion_gt_dict["joints_2d"] = th.cat([motion_gt_dict["joints_2d"], batch["joints_2d"].squeeze(0)], dim=0)
+                        motion_gt_dict["cams_extr"] = th.cat([motion_gt_dict["cams_extr"], batch["cams_extr"]], dim=1)
+            print(f"Validation results for sequence {seq['character']}:{seq['motion_name']}:")
+            loss_dict, acc_dict, pred_dict = self.compute_loss(motion_pred_dict, motion_gt_dict)
+                    # self._val_loss_dict["loss"].append(acc_dict["rmse_3d"])
+                    # self._val_loss_dict["loss_3d"].append(acc_dict["rmse_3d"])
+                    # self._val_loss_dict["loss_2d"].append(acc_dict["rmse_2d"])
+                    # self._val_loss_dict["loss_depth"].append(acc_dict["rmse_depth"])
+                    # if len(self._val_last_plot_data) < self.val_plot_max_batches:
+                    #     self._val_last_plot_data.append(pred_dict)
         self.train()  # set back to train mode after validation
 
 
