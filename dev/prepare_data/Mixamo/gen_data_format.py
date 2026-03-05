@@ -26,16 +26,16 @@ def vid_from_frames(input_path, output_video_path):
     os.system(cmd + " > /dev/null 2>&1")
 
 def search_prompt(output_path, motion_name, cam_desc):
-    characters = ['mannequin', 'michelle', 'prisoner-b-styperek', 'vampire-a-lusth']
-    with open('./character_prompt_mapping.json', 'r') as f:
-        char_prompt_mapping = json.load(f)
-    for char in characters:
-        if char in output_path:
-            print(f"Found character '{char}' in path. Using corresponding prompt template.")
-            return char_prompt_mapping[char].replace('<motion_name>', motion_name).replace('<cam_desc>', cam_desc)
+    # characters = ['mannequin', 'michelle', 'prisoner-b-styperek', 'vampire-a-lusth']
+    # with open('./character_prompt_mapping.json', 'r') as f:
+    #     char_prompt_mapping = json.load(f)
+    # for char in characters:
+    #     if char in output_path:
+    #         print(f"Found character '{char}' in path. Using corresponding prompt template.")
+    #         return char_prompt_mapping[char].replace('<motion_name>', motion_name).replace('<cam_desc>', cam_desc)
         
     # Default prompt if no character name is found in the path
-    return f"A person wearing a grey crop top, yellow pants with blue stripes, black sneakers, orange visor glasses, and orange headphones performs {motion_name}, captured from the {cam_desc} view. Static camera perspective, no zoom or panning."
+    return f"A person performs {motion_name}, captured from the {cam_desc} view. Static camera perspective, no zoom or panning."
 
 if __name__ == "__main__":
     data_path = args.data_path

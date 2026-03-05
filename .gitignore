@@ -179,3 +179,5 @@ dev/prepare_data/Mixamo/testset_motion
 dev/prepare_data/Mixamo/mixamo_fbx
 dev/prepare_data/Mixamo/out
 dev/prepare_data/Mixamo/output_testset
+dev/prepare_data/Mixamo/single_character
+dev/prepare_data/Mixamo/various_characters

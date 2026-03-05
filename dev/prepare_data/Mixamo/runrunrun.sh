@@ -1,0 +1,43 @@
+#!/bin/bash
+python run_pipeline.py \
+  --input_dir ./single_character/trainset_motion/ \
+  --render_output_dir /host/data/mint/Motion_Dataset/Mixamo/single_character/trainset_motion/render \
+  --format_output_dir /host/data/mint/Motion_Dataset/Mixamo/single_character/trainset_motion/rdy_to_wan/all_frames \
+  --chunk_output_dir  /host/data/mint/Motion_Dataset/Mixamo/single_character/trainset_motion/rdy_to_wan/5_frames \
+  --host_prefix /host \
+  --vae_output_path /host/data/mint/Motion_Dataset/Mixamo/single_character/trainset_motion/wan_output/5_frames/latents \
+  --wan_output_path /host/data/mint/Motion_Dataset/Mixamo/single_character/trainset_motion/wan_output/5_frames/train_dit_features \
+  --use_gpu --run_projection --run_blender --only_body_joints \
+  --wan_height 320 --wan_width 640 --n_frames 5 --gpu_id 0 --dataset_repeat_wan 8 &&
+  python run_pipeline.py \
+  --input_dir ./single_character/testset_motion/ \
+  --render_output_dir /host/data/mint/Motion_Dataset/Mixamo/single_character/testset_motion/render \
+  --format_output_dir /host/data/mint/Motion_Dataset/Mixamo/single_character/testset_motion/rdy_to_wan/all_frames \
+  --chunk_output_dir  /host/data/mint/Motion_Dataset/Mixamo/single_character/testset_motion/rdy_to_wan/5_frames \
+  --host_prefix /host \
+  --vae_output_path /host/data/mint/Motion_Dataset/Mixamo/single_character/testset_motion/wan_output/5_frames/latents \
+  --wan_output_path /host/data/mint/Motion_Dataset/Mixamo/single_character/testset_motion/wan_output/5_frames/test_dit_features \
+  --use_gpu --run_projection --run_blender --only_body_joints \
+  --wan_height 320 --wan_width 640 --n_frames 5 --gpu_id 0 --dataset_repeat_wan 8 &&
+python run_pipeline.py \
+  --input_dir ./various_characters/trainset_motion/ \
+  --render_output_dir /host/data/mint/Motion_Dataset/Mixamo/various_characters/trainset_motion/render \
+  --format_output_dir /host/data/mint/Motion_Dataset/Mixamo/various_characters/trainset_motion/rdy_to_wan/all_frames \
+  --chunk_output_dir  /host/data/mint/Motion_Dataset/Mixamo/various_characters/trainset_motion/rdy_to_wan/5_frames \
+  --host_prefix /host \
+  --vae_output_path /host/data/mint/Motion_Dataset/Mixamo/various_characters/trainset_motion/wan_output/5_frames/latents \
+  --wan_output_path /host/data/mint/Motion_Dataset/Mixamo/various_characters/trainset_motion/wan_output/5_frames/train_dit_features \
+  --use_gpu --run_projection --run_blender --only_body_joints \
+  --wan_height 320 --wan_width 640 --n_frames 5 --gpu_id 0 --dataset_repeat_wan 8 &&
+  python run_pipeline.py \
+  --input_dir ./various_characters/testset_motion/ \
+  --render_output_dir /host/data/mint/Motion_Dataset/Mixamo/various_characters/testset_motion/render \
+  --format_output_dir /host/data/mint/Motion_Dataset/Mixamo/various_characters/testset_motion/rdy_to_wan/all_frames \
+  --chunk_output_dir  /host/data/mint/Motion_Dataset/Mixamo/various_characters/testset_motion/rdy_to_wan/5_frames \
+  --host_prefix /host \
+  --vae_output_path /host/data/mint/Motion_Dataset/Mixamo/various_characters/testset_motion/wan_output/5_frames/latents \
+  --wan_output_path /host/data/mint/Motion_Dataset/Mixamo/various_characters/testset_motion/wan_output/5_frames/test_dit_features \
+  --use_gpu --run_projection --run_blender --only_body_joints \
+  --wan_height 320 --wan_width 640 --n_frames 5 --gpu_id 0 --dataset_repeat_wan 8
+
+
