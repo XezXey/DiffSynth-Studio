@@ -108,7 +108,7 @@ def _parse_args() -> argparse.Namespace:
                     help="Frames per chunk.")
     s3.add_argument("--overlap",  type=int, default=0,
                     help="Overlapping frames between consecutive chunks.")
-    s3.add_argument("--metadata_name", type=str, default="metadata_front_view.csv",
+    s3.add_argument("--metadata_name", type=str, default="metadata_front-view.csv",
                     help="Metadata CSV filename to search for inside each character folder.")
 
     # ── step 4: combine ───────────────────────────────────────────────────────

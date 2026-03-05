@@ -135,15 +135,15 @@ def export_skeletons(
 
     for cam_idx in range(n_cam):
         cam_offset = camera_offset_for_index(cam_idx, n_cam, radius, height)
-        out_subdir = os.path.join(out_dir, anim_name, f"cam_{cam_idx}")
+        out_subdir = os.path.join(out_dir, anim_name, f"cam-{cam_idx}")
         os.makedirs(out_subdir, exist_ok=True)
-        json_path = os.path.join(out_subdir, f"skeleton_cam_{cam_idx}.json")
+        json_path = os.path.join(out_subdir, f"skeleton_cam-{cam_idx}.json")
 
-        print(f"[#] Exporting skeleton cam_{cam_idx}  offset={cam_offset}",
+        print(f"[#] Exporting skeleton cam-{cam_idx}  offset={cam_offset}",
               flush=True)
 
-        cam_data = bpy.data.cameras.new(name=f"ExportCam_{cam_idx}")
-        cam_obj  = bpy.data.objects.new(f"ExportCam_{cam_idx}", cam_data)
+        cam_data = bpy.data.cameras.new(name=f"ExportCam-{cam_idx}")
+        cam_obj  = bpy.data.objects.new(f"ExportCam-{cam_idx}", cam_data)
         scene.collection.objects.link(cam_obj)
         scene.camera = cam_obj
 
@@ -204,15 +204,15 @@ def render_sequential(
 
     for cam_idx in range(n_cam):
         cam_offset = camera_offset_for_index(cam_idx, n_cam, radius, height)
-        out_subdir = os.path.join(out_dir, anim_name, f"cam_{cam_idx}")
+        out_subdir = os.path.join(out_dir, anim_name, f"cam-{cam_idx}")
         os.makedirs(out_subdir, exist_ok=True)
 
-        cam_data = bpy.data.cameras.new(name=f"Cam_{cam_idx}")
-        cam_obj  = bpy.data.objects.new(f"Cam_{cam_idx}", cam_data)
+        cam_data = bpy.data.cameras.new(name=f"Cam-{cam_idx}")
+        cam_obj  = bpy.data.objects.new(f"Cam-{cam_idx}", cam_data)
         scene.collection.objects.link(cam_obj)
         scene.camera = cam_obj
 
-        print(f"\n[#] Rendering cam_{cam_idx} ({total_frames} frames) → {out_subdir}",
+        print(f"\n[#] Rendering cam-{cam_idx} ({total_frames} frames) → {out_subdir}",
               flush=True)
 
         for ti, frame in enumerate(render_frames):
@@ -229,7 +229,7 @@ def render_sequential(
             bpy.ops.render.render(write_still=True)
 
             print(
-                f"[#] cam_{cam_idx} frame {frame}/{end_frame} "
+                f"[#] cam-{cam_idx} frame {frame}/{end_frame} "
                 f"({ti + 1}/{total_frames})",
                 flush=True,
             )
@@ -346,10 +346,10 @@ def render_parallel(
 
     jobs = []
     for cam_idx in range(n_cam):
-        out_subdir = os.path.join(out_dir, anim_name, f"cam_{cam_idx}")
+        out_subdir = os.path.join(out_dir, anim_name, f"cam-{cam_idx}")
         for ci, (cs, ce) in enumerate(chunks):
-            label    = f"{anim_name}/cam_{cam_idx}/chunk_{ci:03d}"
-            log_path = os.path.join(out_subdir, f"render_log_chunk_{ci:03d}.txt")
+            label    = f"{anim_name}/cam-{cam_idx}/chunk-{ci:03d}"
+            log_path = os.path.join(out_subdir, f"render-log_chunk-{ci:03d}.txt")
             cmd = _build_blender_cmd(
                 blender_bin=blender_bin, fbx_path=fbx_path,
                 out_dir=out_subdir, cam_idx=cam_idx, n_cam=n_cam,

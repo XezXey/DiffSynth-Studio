@@ -75,8 +75,8 @@ if __name__ == '__main__':
         # print(len(video_chunks), len(motion_2d_chunks), len(motion_3d_chunks), len(cams_extr_chunks), len(chunk_metadata))
         assert len(video_chunks) == len(motion_2d_chunks) == len(motion_3d_chunks) == len(cams_extr_chunks) == len(chunk_metadata)
         for i, (v_chunk, m2d_chunk, m3d_chunk, ce_chunk, (s_f, e_f)) in enumerate(zip(video_chunks, motion_2d_chunks, motion_3d_chunks, cams_extr_chunks, chunk_metadata)):
-            chunk_video_path = os.path.join(args.output_dir, f'{video_base_name}_chunk{i}_video.mp4')
-            chunk_motion_path = os.path.join(args.output_dir, f'{video_base_name}_chunk{i}_motion.npz')
+            chunk_video_path = os.path.join(args.output_dir, f'{video_base_name}_chunk-{i}_video.mp4')
+            chunk_motion_path = os.path.join(args.output_dir, f'{video_base_name}_chunk-{i}_motion.npz')
             # Save video chunk
             torchvision.io.write_video(chunk_video_path, v_chunk, fps=30, video_codec='libx264', options={'crf': '17'})
             # Save motion chunk
@@ -87,7 +87,7 @@ if __name__ == '__main__':
                 'cams_intr': motion['cams_intr'],  # Keep original intrinsics
                 'joint_names': motion['joint_names'],
                 'bones': motion['bones'],
-                'video_name': f'{video_base_name}_chunk{i}_video.mp4',
+                'video_name': f'{video_base_name}_chunk-{i}_video.mp4',
                 'chunk_id': i,
                 'frame_range': (s_f, e_f)
             }

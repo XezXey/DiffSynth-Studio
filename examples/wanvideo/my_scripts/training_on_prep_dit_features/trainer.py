@@ -46,7 +46,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.make_parameters_trainable(self.joint_head)
         
         self._last_plot_data = None  # stores latest batch outputs for plotting
-        self._val_loss_dict = {"loss": [], "loss_3d": [], "loss_2d": []}
+        self._val_loss_dict = {"loss": [], "loss_3d": [], "loss_2d": [], "loss_depth": []}  # accumulate val losses for averaging at epoch end
         self._val_last_plot_data = []
         self.val_plot_max_batches = 10
 
@@ -63,12 +63,14 @@ class TrainOnDiTFeatures(L.LightningModule):
         if self.global_rank != 0:
             return
         with th.no_grad():
-            loss_dict, output_dict = self.forward_pass(batch, batch_idx)
+            pred_dict = self.forward_pass(batch, batch_idx)
+            loss_dict, acc_dict, pred_dict = self.compute_loss(pred_dict, batch)
             self._val_loss_dict['loss'].append(loss_dict['loss'].item())
             self._val_loss_dict['loss_3d'].append(loss_dict['loss_3d'].item())
             self._val_loss_dict['loss_2d'].append(loss_dict['loss_2d'].item())
+            self._val_loss_dict['loss_depth'].append(loss_dict['loss_depth'].item())
         if len(self._val_last_plot_data) < self.val_plot_max_batches:
-            self._val_last_plot_data.append(output_dict)
+            self._val_last_plot_data.append(pred_dict)
 
     @rank_zero_only
     def on_validation_epoch_end(self):
@@ -112,64 +114,92 @@ class TrainOnDiTFeatures(L.LightningModule):
         patch_size = inputs["patch_size"]
 
         out_head = self.head(inp)  # 1, out_dim, H, W
-        out_unpatched = self.unpatchify(out_head, grid_size, patch_size)  # 1, out_dim, T, H, W
+        out_unpatched = unpatchify(out_head, grid_size, patch_size)  # 1, out_dim, T, H, W
         out_decoded = self.joint_vae.decode(out_unpatched, device='cuda')  # 1, J*3, T, 1, 1
         out_joints_map = self.joint_head(out_decoded)  # 1, J*2, T, 1, 1
 
-        pixel_coords, depth = self.map_to_joint(self.J, out_joints_map)  # pixel_coords: (1, J, T, 2); depth: (1, J, T, 1)
+        pixel_coords, depth = map_to_joint(self.J, out_joints_map)  # pixel_coords: (1, J, T, 2); depth: (1, J, T, 1)
         
         fx, fy, cx, cy = inputs["cams_intr"].squeeze(0) # (4)
+        E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
         org_h = cy * 2.0 + 1
         org_w = cx * 2.0 + 1
-        E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
 
-        j3d_gt = inputs["joints_3d"].squeeze(0)  # 1, T, J, 3 -> T, J, 3 (xyz)
-        j2d_gt = inputs["joints_2d"].squeeze(0)  # 1, T, J, 3 -> T, J, 3 (uvd)
-        j2d_gt = j2d_gt[..., :2] # uv gt
-        jd_gt = j2d_gt[..., 2:3] # depth gt
-        assert j3d_gt.shape[0] == j2d_gt.shape[0], "Number of frames mismatch between 3D and 2D joints."
-        assert j3d_gt.shape[1] == j2d_gt.shape[1], "Number of joints mismatch between 3D and 2D joints."
+        pred_u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
+        pred_v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
+        pred_d = depth[..., 0]  # B, J, T
         
-        j2d_gt[..., 0] = j2d_gt[..., 0] / (org_w - 1)     # normalize to [0,1]
-        j2d_gt[..., 1] = j2d_gt[..., 1] / (org_h - 1)   # normalize to [0,1]
-        mask = th.logical_and(j2d_gt[..., :2] >= 0.0, j2d_gt[..., :2] <= 1.0).all(dim=-1)   # .all(dim=-1) to ensure both u and v are valid (squeezed last dimension)
-        
-        h = inputs["height"]
-        w = inputs["width"]
-        u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
-        v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
-        d = depth[..., 0]   # B, J, T, 1
         if self.predict_motion_dt:
-            d = th.cumsum(d, dim=2)  # convert from motion delta to absolute motion, assume first timestep would be the absolute motion
+            pred_d = th.cumsum(pred_d, dim=2)  # convert from motion delta to absolute motion, assume first timestep would be the absolute motion
         else: 
-            d = d
+            pred_d = pred_d
         
-        j2d_pred = th.stack([u / (org_w - 1), v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
-        j3d_pred = unproject_torch(fx, fy, cx, cy, E_bl, th.stack([u, v, d], dim=-1).squeeze(0).permute(1, 0, 2))
-        assert j3d_pred.shape == j3d_gt.shape, f"j3d_pred shape {j3d_pred.shape} does not match training_target shape {training_target_3d.shape}"
-        assert j2d_pred.shape == j2d_gt.shape, f"j2d_pred shape {j2d_pred.shape} does not match gt_j2d shape {j2d_gt.shape}"
+        j2d_pred = th.stack([pred_u / (org_w - 1), pred_v / (org_h - 1)], dim=-1).squeeze(0).permute(1, 0, 2)  # B, J, T -> T, J, 2
+        j3d_pred = unproject_torch(fx, fy, cx, cy, E_bl, th.stack([pred_u, pred_v, pred_d], dim=-1).squeeze(0).permute(1, 0, 2))
 
-        loss_3d = th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float())
-        loss_3d = loss_3d.sum() / (mask.float().sum() + 1e-8)  # average over valid joints only
-        loss_2d = th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float())
-        loss_2d = loss_2d.sum() / (mask.float().sum() + 1e-8)
-        loss_depth = th.nn.functional.mse_loss(d.float(), jd_gt.float())
-        loss_depth = loss_depth.sum() / (mask.float().sum() + 1e-8)
-        loss = loss_3d + loss_2d * 1000.0 + loss_depth * 1000.0
-
-        output_dict = {
-            "motion_pred_3d": j3d_pred.detach().cpu(),
-            "motion_gt_3d": j3d_gt.detach().cpu(),
-            "motion_pred_2d": j2d_pred.detach().cpu(),
-            "motion_gt_2d": j2d_gt.detach().cpu(),
-            "loss_3d": loss_3d.item(),
-            "loss_2d": loss_2d.item(),
+        pred_dict = {
+            "motion_pred_3d": j3d_pred,
+            "motion_pred_2d": j2d_pred,
+            "motion_pred_d": pred_d.permute(2, 1, 0),  # T, J, 1
             "joint_names": inputs["joint_names"],
             "bones": inputs["bones"]
         }
-        loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d, "loss_depth": loss_depth}
 
-        return loss_dict, output_dict
+        return pred_dict
+    
+    def compute_loss(self, pred_dict, batch):
+        
+        inputs = batch
+        
+        # Ground truth
+        inputs["joints_3d"] = inputs["joints_3d"].squeeze(0)
+        inputs["joints_2d"] = inputs["joints_2d"].squeeze(0)
+        j3d_gt = inputs["joints_3d"]  # 1, T, J, 3 -> T, J, 3 (xyz)
+        j2d_gt = inputs["joints_2d"][..., :2]  # 1, T, J, 3 (uvd) -> T, J, 2 (uv)
+        jd_gt = inputs["joints_2d"][..., 2:3] # depth gt
+        fx, fy, cx, cy = inputs["cams_intr"].squeeze(0) # (4)
+        E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
+        org_h = cy * 2.0 + 1
+        org_w = cx * 2.0 + 1
+        j2d_gt[..., 0] = j2d_gt[..., 0] / (org_w - 1)     # normalize to [0,1]
+        j2d_gt[..., 1] = j2d_gt[..., 1] / (org_h - 1)   # normalize to [0,1]
+        mask = th.logical_and(j2d_gt[..., :2] >= 0.0, j2d_gt[..., :2] <= 1.0).all(dim=-1)   # .all(dim=-1) to ensure both u and v are valid (squeezed last dimension)
+        assert j3d_gt.shape[0] == j2d_gt.shape[0], "Number of frames mismatch between 3D and 2D joints."
+        assert j3d_gt.shape[1] == j2d_gt.shape[1], "Number of joints mismatch between 3D and 2D joints."
+        pred_dict["motion_gt_3d"] = j3d_gt
+        pred_dict["motion_gt_2d"] = j2d_gt
+        
+        # Prediction
+        j2d_pred = pred_dict["motion_pred_2d"]  # T, J, 2
+        j3d_pred = pred_dict["motion_pred_3d"]  # T, J, 3
+        jd_pred = pred_dict["motion_pred_d"]  # T, J, 1
+        
+        assert j3d_pred.shape == j3d_gt.shape, f"j3d_pred shape {j3d_pred.shape} does not match training_target shape {training_target_3d.shape}"
+        assert j2d_pred.shape == j2d_gt.shape, f"j2d_pred shape {j2d_pred.shape} does not match gt_j2d shape {j2d_gt.shape}"
+
+        # Loss
+        loss_3d = th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
+        loss_3d = loss_3d.sum() / (mask.float().sum() + 1e-8)  # average over valid joints only
+        loss_2d = th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
+        loss_2d = loss_2d.sum() / (mask.float().sum() + 1e-8)
+        loss_depth = th.nn.functional.mse_loss(jd_pred.float(), jd_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
+        loss_depth = loss_depth.sum() / (mask.float().sum() + 1e-8)
+        loss = loss_3d + loss_2d * 1000.0 + loss_depth
+        # Accuracy metrics (for monitoring only, not used in loss)
+        rmse_3d = th.sqrt(th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float(), reduction='none').mean(dim=-1))  # T, J
+        rmse_2d = th.sqrt(th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float(), reduction='none').mean(dim=-1))  # T, J
+        rmse_depth = th.sqrt(th.nn.functional.mse_loss(jd_pred.float(), jd_gt.float(), reduction='none').mean(dim=-1))  # T, J
+
+        loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d, "loss_depth": loss_depth}
+        acc_dict = {"rmse_3d": rmse_3d.mean().item(), "rmse_2d": rmse_2d.mean().item(), "rmse_depth": rmse_depth.mean().item()}
+        
+        # Detach for visualization and logging to avoid memory leak
+        for k, v in pred_dict.items():
+            if isinstance(v, th.Tensor):
+                pred_dict[k] = v.detach().cpu().numpy()
+        
+        return loss_dict, acc_dict, pred_dict
+        
 
     def training_step(self, batch, batch_idx):
         """
@@ -179,10 +209,12 @@ class TrainOnDiTFeatures(L.LightningModule):
         - 'joints_2d': ground truth 2D joint positions, shape (1, T, J, 2)
 
         """
-        loss_dict, output_dict = self.forward_pass(batch, batch_idx)
-        self._last_plot_data = output_dict  # store for visualization in callbacks
+        pred_dict = self.forward_pass(batch, batch_idx)
+        loss_dict, acc_dict, pred_dict = self.compute_loss(pred_dict, batch)
+        self._last_plot_data = pred_dict  # store for visualization in callbacks
         self.log_dict({f"train/{k}": v for k, v in loss_dict.items()}, on_step=True, on_epoch=False, prog_bar=True, logger=True)
-        return loss_dict["loss"]
+        self.log_dict({f"train/{k}": v for k, v in acc_dict.items()}, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+        return loss_dict["loss"]    # for backward() to optimize this loss
 
     @rank_zero_only
     def on_train_batch_end(self, outputs, batch, batch_idx):

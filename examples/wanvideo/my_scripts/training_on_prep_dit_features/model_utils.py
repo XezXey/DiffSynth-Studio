@@ -9,7 +9,7 @@ def unpatchify(x, grid_size, patch_size):
         x=patch_size[0], y=patch_size[1], z=patch_size[2]
     )
     
-def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8)
+def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8):
     """
     Args:
         fx, fy, cx, cy: scalars (python float or torch scalar)
@@ -79,11 +79,11 @@ def unproject_torch(fx, fy, cx, cy, E_bl, j2d, eps=1e-8)
 def map_to_joint(J, joint_map):
         """
         Inputs: 
-            joint_map: (b, c, t, h, w)
-                - c = 2 * J (heatmap and depth channels)
+            joint_map: (B, C, T, H, W)
+                - C = 2 * J (heatmap and depth channels)
         Returns:
-            pixel_coords: (b, J, t, 2) - x,y pixel coordinates
-            depth: (b, J, t) - depth values
+            pixel_coords: (B, J, T, 2) - x,y pixel coordinates
+            depth: (B, J, T) - depth values
         """
         b, c, t, h, w = joint_map.shape
         joint_map_list = th.chunk(joint_map, J, dim=1)  # List of (b, 2, t, h, w), length J

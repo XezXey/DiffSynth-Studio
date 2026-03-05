@@ -26,7 +26,7 @@ def vid_from_frames(input_path, output_video_path):
     os.system(cmd + " > /dev/null 2>&1")
 
 def search_prompt(output_path, motion_name, cam_desc):
-    characters = ['mannequin', 'michelle', 'prisoner_b_styperek', 'vampire_a_lusth']
+    characters = ['mannequin', 'michelle', 'prisoner-b-styperek', 'vampire-a-lusth']
     with open('./character_prompt_mapping.json', 'r') as f:
         char_prompt_mapping = json.load(f)
     for char in characters:
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     df_single_motion = pd.DataFrame(columns=['video', 'motion', 'prompt'])
     df_single_sample = pd.DataFrame(columns=['video', 'motion', 'prompt'])
     # Example path: /data/mint/Motion_Dataset/Mixamo/output_mixamo/<motion_name>/<camera_name>/
-    # cam_0 = front view, cam_1 = right side view, cam_2 = back view, cam_3 = left side view
+    # cam-0 = front view, cam-1 = right side view, cam-2 = back view, cam-3 = left side view
     motion_dirs = glob.glob(os.path.join(data_path, '*'))
     for motion in tqdm.tqdm(motion_dirs, desc="Processing motions:"):
         tqdm.tqdm.write(f"Processing motion: {motion}")
@@ -71,26 +71,26 @@ if __name__ == "__main__":
 
             
             # Copy motion_data.npz
-            src_npz = os.path.join(cam, 'motion_data.npz').replace(' ', '\ ')
-            dst_npz = os.path.join(output_path, f'{vid_name}_motion_data.npz').replace(' ', '\ ')
+            src_npz = os.path.join(cam, 'motion.npz').replace(' ', '\ ')
+            dst_npz = os.path.join(output_path, f'{vid_name}_motion.npz').replace(' ', '\ ')
             os.system(f'cp {src_npz} {dst_npz}')
             
             # Write metadata
             with open(os.path.join(output_path, 'metadata.csv'), 'a') as f:
-                cam_desc = {'cam_0': 'front', 'cam_1': 'right side', 'cam_2': 'back', 'cam_3': 'left side'}.get(cam_name, cam_name)
+                cam_desc = {'cam-0': 'front', 'cam-1': 'right side', 'cam-2': 'back', 'cam-3': 'left side'}.get(cam_name, cam_name)
                 prompt = search_prompt(output_path, motion_name, cam_desc)
                 
-                motion_file = f"{vid_name}_motion_data.npz"
+                motion_file = f"{vid_name}_motion.npz"
                 vid_file = f"{vid_name}_render.mp4"
                 df_render = pd.concat([df_render, pd.DataFrame([[vid_file, motion_file, prompt]], columns=['video', 'motion', 'prompt'])], ignore_index=True)
             
     df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
     # df_single_motion = df_render[df_render['motion'].str.contains('Walking')]
     # df_single_motion.to_csv(os.path.join(output_path, 'metadata_single_motion.csv'), index=False)
-    # df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam_0_motion_data.npz')]
+    # df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam-0_motion.npz')]
     # df_single_sample.to_csv(os.path.join(output_path, 'metadata_single_sample.csv'), index=False)
-    df_front_view = df_render[df_render['motion'].str.contains('cam_0')]
-    df_front_view.to_csv(os.path.join(output_path, 'metadata_front_view.csv'), index=False)
+    df_front_view = df_render[df_render['motion'].str.contains('cam-0')]
+    df_front_view.to_csv(os.path.join(output_path, 'metadata_front-view.csv'), index=False)
     
 
             

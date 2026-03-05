@@ -156,8 +156,8 @@ def render_single_cam(
     )
 
     # ---- Camera ----
-    cam_data = bpy.data.cameras.new(name=f"Cam_{cam_idx}")
-    cam_obj  = bpy.data.objects.new(f"Cam_{cam_idx}", cam_data)
+    cam_data = bpy.data.cameras.new(name=f"Cam-{cam_idx}")
+    cam_obj  = bpy.data.objects.new(f"Cam-{cam_idx}", cam_data)
     scene.collection.objects.link(cam_obj)
     scene.camera = cam_obj
 

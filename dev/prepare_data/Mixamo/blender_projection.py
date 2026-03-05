@@ -264,7 +264,7 @@ def process(path):
         "W": W,
     }
     
-    np.savez_compressed(path / f"motion_data.npz", **save_data)
+    np.savez_compressed(path / f"motion.npz", **save_data)
 
 if __name__ == "__main__":
     t = tqdm.tqdm(glob.glob(f'{args.path}/*/cam*/'), desc="Processing: ")
