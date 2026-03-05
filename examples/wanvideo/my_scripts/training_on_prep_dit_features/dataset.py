@@ -2,6 +2,7 @@ import os
 import torch as th
 import time
 import glob
+import lightning as L
 import numpy as np
 from PIL import Image
 from collections import defaultdict
@@ -11,7 +12,7 @@ class DitFeaturesDataset(th.utils.data.Dataset):
     def __init__(self, dit_features_path_list, preferred_dit_block_id=-1):
         self.dit_features_path_list = dit_features_path_list
         self.preferred_dit_block_id = preferred_dit_block_id
-        self.focus_fields = ['input_video', 'dit_features', 'grid_size', 'dim', 'out_dim', 'patch_size', 'z_dim', 'joints_3d', 'joints_2d', 'cams_intr', 'cams_extr', 'height', 'width', 'joint_names', 'bones']
+        self.focus_fields = ['input_video', 'dit_features', 'grid_size', 'dim', 'out_dim', 'patch_size', 'z_dim', 'joints_3d', 'joints_2d', 'cams_intr', 'cams_extr', 'height', 'width', 'joint_names', 'bones', 'motion_name']
     
     def __len__(self):
         return len(self.dit_features_path_list)
@@ -21,7 +22,6 @@ class DitFeaturesDataset(th.utils.data.Dataset):
         dit_features = th.load(dit_feature_path, map_location="cpu", weights_only=False)
         input_shared = dit_features[0]
         input_shared["dit_features"] = input_shared["dit_features"][self.preferred_dit_block_id]
-        print(input_shared['motion_name'])
         return input_shared
 
     def collate_fn_(self, batch):
@@ -308,3 +308,43 @@ if __name__ == "__main__":
         )
         for batch in loader:
             print(batch["dit_features"].shape)
+
+class MotionValidationCallback(L.Callback):
+    """
+    Runs validation every N epochs using the full sequence iteration logic
+    (character → motion → ordered chunks), bypassing Lightning's flat
+    val_dataloader mechanism.
+    """
+    def __init__(self, val_paths, every_n_epochs=5, preferred_dit_block_id=-1):
+        self.val_paths      = val_paths
+        self.every_n_epochs = every_n_epochs
+        self.preferred_dit_block_id = preferred_dit_block_id
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        if (trainer.current_epoch + 1) % self.every_n_epochs != 0:
+            return
+        val_dataset = DitFeaturesByMotionNameDataset(
+            self.val_paths, preferred_dit_block_id=self.preferred_dit_block_id
+        )
+
+        pl_module.eval()
+        batch_idx = 0
+        with th.no_grad():
+            for seq in val_dataset.iter_inference_sequences():
+                ds = DitFeaturesDataset(
+                    seq["paths"], preferred_dit_block_id=self.preferred_dit_block_id
+                )
+                loader = th.utils.data.DataLoader(
+                    ds, batch_size=1, collate_fn=ds.collate_fn_
+                )
+                for batch in loader:
+                    # Move batch tensors to the same device as the model
+                    batch = {
+                        k: v.to(pl_module.device) if isinstance(v, th.Tensor) else v
+                        for k, v in batch.items()
+                    }
+                    pl_module.validation_step(batch, batch_idx)
+                    batch_idx += 1
+
+        pl_module.on_validation_epoch_end()
+        pl_module.train()

@@ -5,7 +5,7 @@ from trainer import TrainOnDiTFeatures
 import os
 import glob
 import argparse
-from dataset import DitFeaturesDataset
+from dataset import DitFeaturesDataset, DitFeaturesByMotionNameDataset, MotionValidationCallback
 from lightning.pytorch.loggers import WandbLogger
 from mylogger.logger import init_logger
 
@@ -25,6 +25,7 @@ if __name__ == "__main__":
     # Saving and logging
     parser.add_argument("--vis_steps", type=int, default=100, help="Visualization every n steps.")
     parser.add_argument("--save_steps", type=int, default=100, help="Save model every n steps.")
+    parser.add_argument("--val_steps", type=int, default=100, help="Validation every n steps.")
     parser.add_argument("--log_steps", type=int, default=10, help="Log training info every n steps.")
     parser.add_argument("--use_wandb", action="store_true", default=False, help="Whether to use wandb for logging.")
     parser.add_argument("--wandb_save_name", type=str, default="train_on_prep_dit_features", help="Name for the wandb run.")
@@ -117,6 +118,8 @@ if __name__ == "__main__":
         log_dir=args.output_path,
         vis_steps=args.vis_steps,
         save_steps=args.save_steps,
+        val_steps=args.val_steps,
+        val_dit_features_path=args.val_dit_features_path,
         logger=wandb_logger,
         predict_motion_dt=args.predict_motion_dt,
     )
@@ -127,28 +130,15 @@ if __name__ == "__main__":
 
     if args.overfit_single_batch:
         logger.warning("Overfitting on a single batch for sanity check...")
-        overfit_kwargs = dict(overfit_batches=1, limit_train_batches=1, limit_val_batches=0.0)
-    else:
-        overfit_kwargs = dict(limit_val_batches=args.limit_val_batches)
+        overfit_kwargs = dict(overfit_batches=1, limit_train_batches=1)
     trainer_kwargs.update(overfit_kwargs)
-    
-    if args.force_check_val_loop:
-        logger.warning("Forcing validation loop to run every epoch for sanity check (set limit_val_batches=1, check_val_every_n_epoch=1)...")
-        val_kwargs = dict(limit_val_batches=0.005, check_val_every_n_epoch=1, limit_train_batches=1)
-        if val_dataloader is None:
-            logger.error("Cannot force validation loop to run every epoch because no validation dataloader is provided. Please provide a validation dataloader or disable the --force_check_val_loop flag.")
-            exit(1)
-    else: 
-        val_kwargs = dict(check_val_every_n_epoch=args.check_val_every_n_epoch)
-    trainer_kwargs.update(val_kwargs)
-    
+
     trainer = L.Trainer(
         max_epochs=args.num_epochs,
         accelerator="cuda",
         devices=args.n_gpus,
         logger=wandb_logger,
         default_root_dir=args.output_path + "/lightning_logs",
-        profiler="simple",
         **trainer_kwargs,
     )
-    trainer.fit(model, train_dataloader, val_dataloader)
+    trainer.fit(model, train_dataloader)

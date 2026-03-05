@@ -4,7 +4,7 @@ import wandb
 import lightning as L
 from model_utils import unproject_torch, map_to_joint, unpatchify
 import numpy as np
-from dataset import DitFeaturesDataset
+from dataset import DitFeaturesDataset, DitFeaturesByMotionNameDataset
 from model import JointVAE38, Head
 from diffsynth.diffusion.vis import MultiSkeleton2D3DAnimator
 import glob, os, plotly, argparse
@@ -21,11 +21,13 @@ class TrainOnDiTFeatures(L.LightningModule):
             log_dir,
             vis_steps,
             save_steps,
+            val_steps,
             logger,
             predict_motion_dt=False,
             eps=1e-8, 
             num_res_blocks=0, 
             lr=1e-4,
+            val_dit_features_path=None,
             ):
         super().__init__()
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).train()
@@ -35,10 +37,11 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.preferred_dit_block_id = preferred_dit_block_id
         self.J = J
         self.out_j_chn = out_J_chn
+        self.save_steps = save_steps
         self.vis_steps = vis_steps
+        self.val_steps = val_steps
         self.log_dir = log_dir
         self.wandb_logger = logger
-        self.save_steps = save_steps
         self.predict_motion_dt = predict_motion_dt
         
         self.make_parameters_trainable(self.head)
@@ -50,6 +53,15 @@ class TrainOnDiTFeatures(L.LightningModule):
         self._val_last_plot_data = []
         self.val_plot_max_batches = 10
 
+        self.val_dit_features_path = val_dit_features_path
+        if self.val_dit_features_path is not None:
+            self.val_dataset = DitFeaturesByMotionNameDataset(
+                dit_features_path_list=glob.glob(f"{self.val_dit_features_path}/*.pth"),
+                preferred_dit_block_id=self.preferred_dit_block_id
+            )
+        else:
+            self.val_dataset = None
+
     def make_parameters_trainable(self, module):
         for param in module.parameters():
             param.requires_grad = True
@@ -58,53 +70,71 @@ class TrainOnDiTFeatures(L.LightningModule):
         optimizer = th.optim.AdamW(list(self.head.parameters()) + list(self.joint_vae.parameters()), lr=self.lr)
         return optimizer
 
-    
-    def validation_step(self, batch, batch_idx):
-        if self.global_rank != 0:
+    @rank_zero_only
+    def on_train_epoch_end(self):
+        if (self.global_rank != 0 or self.global_step % self.val_steps != 0) and (self.val_dataset is not None):
             return
-        with th.no_grad():
-            pred_dict = self.forward_pass(batch, batch_idx)
-            loss_dict, acc_dict, pred_dict = self.compute_loss(pred_dict, batch)
-            self._val_loss_dict['loss'].append(loss_dict['loss'].item())
-            self._val_loss_dict['loss_3d'].append(loss_dict['loss_3d'].item())
-            self._val_loss_dict['loss_2d'].append(loss_dict['loss_2d'].item())
-            self._val_loss_dict['loss_depth'].append(loss_dict['loss_depth'].item())
-        if len(self._val_last_plot_data) < self.val_plot_max_batches:
-            self._val_last_plot_data.append(pred_dict)
+        # Run the validation on rank 0 only
+        self.eval()
+        for seq in self.val_dataset.iter_inference_sequences():
+            ds = DitFeaturesDataset(
+                seq["paths"], preferred_dit_block_id=self.preferred_dit_block_id
+            )
+            loader = th.utils.data.DataLoader(
+                ds, batch_size=1, collate_fn=ds.collate_fn_
+            )
+
+            for batch_idx, batch in enumerate(loader):
+                with th.no_grad():
+                    batch = {k: v.to(self.device) if isinstance(v, th.Tensor) else v for k, v in batch.items()}
+                    pred_dict = self.forward_pass(batch, batch_idx)
+                    for k in pred_dict:
+                        print(k, pred_dict[k].shape if isinstance(pred_dict[k], th.Tensor) else type(pred_dict[k]))
+                    exit()
+                    _, acc_dict, pred_dict = self.compute_loss(pred_dict, batch)
+                    self._val_loss_dict["loss"].append(acc_dict["rmse_3d"])
+                    self._val_loss_dict["loss_3d"].append(acc_dict["rmse_3d"])
+                    self._val_loss_dict["loss_2d"].append(acc_dict["rmse_2d"])
+                    self._val_loss_dict["loss_depth"].append(acc_dict["rmse_depth"])
+                    if len(self._val_last_plot_data) < self.val_plot_max_batches:
+                        self._val_last_plot_data.append(pred_dict)
+        self.train()  # set back to train mode after validation
+
 
     @rank_zero_only
     def on_validation_epoch_end(self):
-        self.log_dict(
-            {f"val/{k}": sum(v) / len(v) for k, v in self._val_loss_dict.items()},
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-        )
-        if len(self._val_last_plot_data) > 0:
-            os.makedirs(os.path.join(self.log_dir, "vis"), exist_ok=True)
-            for idx, d in enumerate(self._val_last_plot_data):
-                joint_names = d["joint_names"]
-                edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in d["bones"]]
-                anim = MultiSkeleton2D3DAnimator(fps=30, title=f"Val Motions (batch {idx})", y_axis_down=True)
-                anim.add_sequence(d["motion_gt_3d"], K2=d["motion_gt_2d"], edges=edges, color="blue", name="Ground Truth")
-                anim.add_sequence(d["motion_pred_3d"], K2=d["motion_pred_2d"], edges=edges, color="red", name="Prediction")
-                save_path = os.path.join(
-                    self.log_dir,
-                    "vis",
-                    f"val_motion_step_{self.global_step}_epoch_{self.current_epoch}_batch_{idx}.html"
-                )
-                plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
-                if self.wandb_logger is not None:
-                    with open(save_path, "r", encoding="utf-8") as f:
-                        wandb.log({
-                            f"val/motion_batch_{idx}": wandb.Html(f.read()),
-                            "step": self.global_step,
-                            "epoch": self.current_epoch,
-                        })
-        # Reset for next val run
-        self._val_last_plot_data = []
-        self._val_loss_dict = {"loss": [], "loss_3d": [], "loss_2d": []}
+        pass
+        # self.log_dict(
+        #     {f"val/{k}": sum(v) / len(v) for k, v in self._val_loss_dict.items()},
+        #     on_step=False,
+        #     on_epoch=True,
+        #     prog_bar=True,
+        #     logger=True,
+        # )
+        # if len(self._val_last_plot_data) > 0:
+        #     os.makedirs(os.path.join(self.log_dir, "vis"), exist_ok=True)
+        #     for idx, d in enumerate(self._val_last_plot_data):
+        #         joint_names = d["joint_names"]
+        #         edges = [[joint_names.index(b[0]), joint_names.index(b[1])] for b in d["bones"]]
+        #         anim = MultiSkeleton2D3DAnimator(fps=30, title=f"Val Motions (batch {idx})", y_axis_down=True)
+        #         anim.add_sequence(d["motion_gt_3d"], K2=d["motion_gt_2d"], edges=edges, color="blue", name="Ground Truth")
+        #         anim.add_sequence(d["motion_pred_3d"], K2=d["motion_pred_2d"], edges=edges, color="red", name="Prediction")
+        #         save_path = os.path.join(
+        #             self.log_dir,
+        #             "vis",
+        #             f"val_motion_step_{self.global_step}_epoch_{self.current_epoch}_batch_{idx}.html"
+        #         )
+        #         plotly.offline.plot(anim.fig, filename=save_path, auto_open=False)
+        #         if self.wandb_logger is not None:
+        #             with open(save_path, "r", encoding="utf-8") as f:
+        #                 wandb.log({
+        #                     f"val/motion_batch_{idx}": wandb.Html(f.read()),
+        #                     "step": self.global_step,
+        #                     "epoch": self.current_epoch,
+        #                 })
+        # # Reset for next val run
+        # self._val_last_plot_data = []
+        # self._val_loss_dict = {"loss": [], "loss_3d": [], "loss_2d": []}
     
     def forward_pass(self, batch, batch_idx):
         inputs = batch
