@@ -181,3 +181,6 @@ dev/prepare_data/Mixamo/out
 dev/prepare_data/Mixamo/output_testset
 dev/prepare_data/Mixamo/single_character
 dev/prepare_data/Mixamo/various_characters
+examples/wanvideo/my_scripts/training_on_prep_dit_features/results_dt
+examples/wanvideo/my_scripts/training_on_prep_dit_features/results_ar
+examples/wanvideo/my_scripts/training_on_prep_dit_features/tmp_results

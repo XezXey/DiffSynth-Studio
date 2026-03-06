@@ -39,14 +39,13 @@ import argparse
 
 # Colour palette for overlaid predictions (GT always uses _GT_COLOR)
 _PRED_PALETTE = [
-    "#4ECDC4",  # teal
     "#FF6B6B",  # coral
-    "#FFB86C",  # orange
     "#BD93F9",  # purple
     "#8BE9FD",  # cyan
     "#F1FA8C",  # yellow
 ]
-_GT_COLOR = "#50FA7B"  # green
+# _GT_COLOR = "#50FA7B"  # green
+_GT_COLOR = "#4ECDC4"  # light blue
 
 
 # ── Path-label helpers ────────────────────────────────────────────────────────
@@ -200,16 +199,35 @@ if __name__ == "__main__":
     ap.add_argument("--row_id",        nargs="+", type=int, default=None,
                     help="Row index for each --prediction_path file (same length). "
                          "Files with the same index share a row. E.g.: --row_id 0 0 0 1")
-    ap.add_argument("--prediction_path", nargs="+", required=True,  help="One or more .npz result files.")
+    ap.add_argument("--prediction_path", nargs="*", default=[],     help="One or more .npz result files.")
+    ap.add_argument("--discover",      nargs="+", default=[],       metavar="DIR",
+                    help="Directories to recursively search for *.npz files. "
+                         "Found files are appended to --prediction_path (sorted). "
+                         "E.g.: --discover results_michelle/model_step_100000")
     args = ap.parse_args()
 
-    if args.row_id is not None and len(args.row_id) != len(args.prediction_path):
-        ap.error(f"--row_id must have the same length as --prediction_path "
-                 f"({len(args.row_id)} vs {len(args.prediction_path)})")
+    # Auto-discover .npz files from --discover directories
+    discovered: list[str] = []
+    for d in args.discover:
+        found = sorted(str(p) for p in Path(d).rglob("*.npz"))
+        if not found:
+            ap.error(f"--discover: no .npz files found under '{d}'")
+        print(f"Discovered {len(found)} file(s) under '{d}':")
+        for f in found:
+            print(f"  {f}")
+        discovered.extend(found)
+    all_paths = list(args.prediction_path) + discovered
 
-    print(f"Loading {len(args.prediction_path)} file(s)…")
+    if not all_paths:
+        ap.error("Provide at least one .npz file via --prediction_path or --discover.")
+
+    if args.row_id is not None and len(args.row_id) != len(all_paths):
+        ap.error(f"--row_id must have the same length as the total number of .npz files "
+                 f"({len(args.row_id)} vs {len(all_paths)})")
+
+    print(f"Loading {len(all_paths)} file(s)…")
     entries = []
-    for p in args.prediction_path:
+    for p in all_paths:
         print(f"  {p}")
         e = _load_npz(p)
         if args.no_group:
