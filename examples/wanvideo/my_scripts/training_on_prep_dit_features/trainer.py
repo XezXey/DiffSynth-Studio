@@ -8,6 +8,8 @@ from dataset import DitFeaturesDataset, DitFeaturesByMotionNameDataset
 from model import JointVAE38, Head
 from diffsynth.diffusion.vis import MultiSkeleton2D3DAnimator
 import glob, os, plotly, argparse
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+from rich.console import Console
 
 class TrainOnDiTFeatures(L.LightningModule):
     def __init__(
@@ -66,9 +68,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         return optimizer
 
     @rank_zero_only
-    def on_train_epoch_end(self):
-        if (self.global_rank != 0 or self.global_step % self.val_steps != 0) and (self.val_dataset is not None):
-            return
+    def validate(self):
         # Run the validation on rank 0 only
         self.eval()
         all_loss_dict = {}
@@ -77,54 +77,64 @@ class TrainOnDiTFeatures(L.LightningModule):
         all_gt_dict = {}
         all_motion_names = []
         n_motion = 0
-        for seq in self.val_dataset.iter_inference_sequences(): # iterate over character-motion sequences
-            ds = DitFeaturesDataset(
-                seq["paths"], preferred_dit_block_id=self.preferred_dit_block_id
-            )
-            loader = th.utils.data.DataLoader(
-                ds, batch_size=1, collate_fn=ds.collate_fn_
-            )
+        val_sequences = list(self.val_dataset.iter_inference_sequences())
+        _console = Console(stderr=True)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(), transient=True, console=_console) as progress:
+            task = progress.add_task("Validating - ", total=len(val_sequences))
+            batch_task = progress.add_task(" Chunk-id", total=None, visible=False)
+            for seq in val_sequences: # iterate over character-motion sequences
+                progress.update(task, description=f"Validating - [cyan]{seq['character']}:{seq['motion_name']}[/]")
+                ds = DitFeaturesDataset(
+                    seq["paths"], preferred_dit_block_id=self.preferred_dit_block_id
+                )
+                loader = th.utils.data.DataLoader(
+                    ds, batch_size=1, collate_fn=ds.collate_fn_
+                )
+                n_batches = len(loader)
+                progress.update(batch_task, completed=0, total=n_batches, visible=True)
 
-            motion_pred_dict = {}
-            motion_gt_dict = {}
-            for batch_idx, batch in enumerate(loader):
-                with th.no_grad():
-                    batch = {k: v.to(self.device) if isinstance(v, th.Tensor) else v for k, v in batch.items()}
-                    pred_dict = self.forward_pass(batch, batch_idx)
-                    if batch_idx == 0:
-                        motion_pred_dict = pred_dict
-                        motion_gt_dict = {
-                            "joints_3d": batch["joints_3d"].squeeze(0), "joints_2d": batch["joints_2d"].squeeze(0), 
-                            "cams_intr": batch["cams_intr"], "cams_extr": batch["cams_extr"],
-                            "height": batch["height"], "width": batch["width"], "joint_names": batch["joint_names"], "bones": batch["bones"]
-                        }
-                    else:
-                        for k in ["motion_pred_3d", "motion_pred_2d", "motion_pred_d"]:
-                            motion_pred_dict[k] = th.cat([motion_pred_dict[k], pred_dict[k]], dim=0)  # concatenate along time dimension
-                        motion_gt_dict["joints_3d"] = th.cat([motion_gt_dict["joints_3d"], batch["joints_3d"].squeeze(0)], dim=0)
-                        motion_gt_dict["joints_2d"] = th.cat([motion_gt_dict["joints_2d"], batch["joints_2d"].squeeze(0)], dim=0)
-                        motion_gt_dict["cams_extr"] = th.cat([motion_gt_dict["cams_extr"], batch["cams_extr"]], dim=1)
-            all_motion_names.append(f"{seq['character']}:{seq['motion_name']}")
-            loss_dict, acc_dict, pred_dict = self.compute_loss(motion_pred_dict, motion_gt_dict)
-            for k, v in loss_dict.items():
-                if k not in all_loss_dict:
-                    all_loss_dict[k] = []
-                all_loss_dict[k].append(v.item())
-            for k, v in acc_dict.items():
-                if k not in all_acc_dict:
-                    all_acc_dict[k] = []
-                all_acc_dict[k].append(v)
-            for k in ["motion_pred_3d", "motion_pred_2d", "motion_pred_d"]:
-                if k not in all_pred_dict:
-                    all_pred_dict[k] = []
-                all_pred_dict[k].append(pred_dict[k])
-            for k in ["joints_3d", "joints_2d", "joint_names", "bones"]:
-                if k not in all_gt_dict:
-                    all_gt_dict[k] = []
-                if k == "joints_2d":
-                    motion_gt_dict[k] = motion_gt_dict[k][..., :2]
-                all_gt_dict[k].append(motion_gt_dict[k].cpu().numpy() if isinstance(motion_gt_dict[k], th.Tensor) else motion_gt_dict[k])
-            n_motion += 1
+                motion_pred_dict = {}
+                motion_gt_dict = {}
+                for batch_idx, batch in enumerate(loader):
+                    with th.no_grad():
+                        batch = {k: v.to(self.device) if isinstance(v, th.Tensor) else v for k, v in batch.items()}
+                        pred_dict = self.forward_pass(batch, batch_idx)
+                        progress.advance(batch_task)
+                        if batch_idx == 0:
+                            motion_pred_dict = pred_dict
+                            motion_gt_dict = {
+                                "joints_3d": batch["joints_3d"].squeeze(0), "joints_2d": batch["joints_2d"].squeeze(0), 
+                                "cams_intr": batch["cams_intr"], "cams_extr": batch["cams_extr"],
+                                "height": batch["height"], "width": batch["width"], "joint_names": batch["joint_names"], "bones": batch["bones"]
+                            }
+                        else:
+                            for k in ["motion_pred_3d", "motion_pred_2d", "motion_pred_d"]:
+                                motion_pred_dict[k] = th.cat([motion_pred_dict[k], pred_dict[k]], dim=0)  # concatenate along time dimension
+                            motion_gt_dict["joints_3d"] = th.cat([motion_gt_dict["joints_3d"], batch["joints_3d"].squeeze(0)], dim=0)
+                            motion_gt_dict["joints_2d"] = th.cat([motion_gt_dict["joints_2d"], batch["joints_2d"].squeeze(0)], dim=0)
+                            motion_gt_dict["cams_extr"] = th.cat([motion_gt_dict["cams_extr"], batch["cams_extr"]], dim=1)
+                all_motion_names.append(f"{seq['character']}:{seq['motion_name']}")
+                loss_dict, acc_dict, pred_dict = self.compute_loss(motion_pred_dict, motion_gt_dict)
+                for k, v in loss_dict.items():
+                    if k not in all_loss_dict:
+                        all_loss_dict[k] = []
+                    all_loss_dict[k].append(v.item())
+                for k, v in acc_dict.items():
+                    if k not in all_acc_dict:
+                        all_acc_dict[k] = []
+                    all_acc_dict[k].append(v)
+                for k in ["motion_pred_3d", "motion_pred_2d", "motion_pred_d"]:
+                    if k not in all_pred_dict:
+                        all_pred_dict[k] = []
+                    all_pred_dict[k].append(pred_dict[k])
+                for k in ["joints_3d", "joints_2d", "joint_names", "bones"]:
+                    if k not in all_gt_dict:
+                        all_gt_dict[k] = []
+                    if k == "joints_2d":
+                        motion_gt_dict[k] = motion_gt_dict[k][..., :2]
+                    all_gt_dict[k].append(motion_gt_dict[k].cpu().numpy() if isinstance(motion_gt_dict[k], th.Tensor) else motion_gt_dict[k])
+                n_motion += 1
+                progress.advance(task)
                 
         for k in all_loss_dict:
             all_loss_dict[k] = np.mean(all_loss_dict[k])
@@ -271,6 +281,8 @@ class TrainOnDiTFeatures(L.LightningModule):
             self._plot_results(self.global_step)
         if (self.global_step) % (self.save_steps) == 0:
             self._save_model(self.global_step)
+        if (self.val_dataset is not None) and (self.global_step % self.val_steps == 0):
+            self.validate()
 
     @rank_zero_only
     def _plot_results(self, step):

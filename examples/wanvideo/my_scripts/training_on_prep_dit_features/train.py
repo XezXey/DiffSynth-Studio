@@ -131,7 +131,7 @@ if __name__ == "__main__":
     if args.overfit_single_batch:
         logger.warning("Overfitting on a single batch for sanity check...")
         overfit_kwargs = dict(overfit_batches=1, limit_train_batches=1)
-    trainer_kwargs.update(overfit_kwargs)
+        trainer_kwargs.update(overfit_kwargs)
 
     trainer = L.Trainer(
         max_epochs=args.num_epochs,
