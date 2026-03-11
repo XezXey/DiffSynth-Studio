@@ -76,7 +76,7 @@ class SkelAg(th.nn.Module):
         
         if self.predict_motion_dt:
             if start_depth is not None:
-                pred_d[..., 0:1] = start_depth
+                pred_d[:, :, 0:1] = start_depth
             pred_d = th.cumsum(pred_d, dim=2)  # convert from motion delta to absolute motion, assume first timestep would be the absolute motion
         else: 
             pred_d = pred_d

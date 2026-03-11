@@ -401,6 +401,17 @@ header span { font-size:11px; color:var(--muted); font-family:'Space Mono',monos
 }
 .btn-reset:hover { color:#fff; border-color:var(--accent2); background:rgba(255,107,107,.12); }
 .btn-reset:active { transform:scale(.96); }
+/* ── Model label strip ──────────────────────────────────────────────────── */
+.row-labels {
+  display:flex; flex-wrap:wrap; gap:8px 24px; align-items:flex-start;
+  padding:7px 14px; background:var(--surface); border-bottom:1px solid var(--border);
+}
+.model-label-item {
+  display:inline-flex; align-items:baseline; gap:7px; max-width:100%;
+  font-family:'Space Mono',monospace; font-size:10px;
+}
+.model-label-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; margin-top:2px; display:inline-block; }
+.model-label-text { opacity:.9; word-break:break-all; line-height:1.5; }
 """
 
 # ── Embedded JavaScript ───────────────────────────────────────────────────────
@@ -525,18 +536,21 @@ function init3DPanel(cell,pd){
   });
   function loop(){requestAnimationFrame(loop);orb.update();rdr.render(scene,cam);}
   loop();
+  var spread3d=0;
   function setFrame(f){
+    var ctr3=(objs.length-1)/2;
     for(var oi=0;oi<objs.length;oi++){
       var o=objs[oi],pts=o.normed[f];
       var vis=o.visible;
+      var xOff=(oi-ctr3)*spread3d*2.0;
       for(var j=0;j<J;j++){
-        o.jts[j].position.set(pts[j][0],pts[j][1],pts[j][2]);
+        o.jts[j].position.set(pts[j][0]+xOff,pts[j][1],pts[j][2]);
         o.jts[j].visible=vis;
       }
       for(var e=0;e<edges.length;e++){
         var ab=edges[e],pos=o.bns[e].geometry.attributes.position;
-        pos.setXYZ(0,pts[ab[0]][0],pts[ab[0]][1],pts[ab[0]][2]);
-        pos.setXYZ(1,pts[ab[1]][0],pts[ab[1]][1],pts[ab[1]][2]);
+        pos.setXYZ(0,pts[ab[0]][0]+xOff,pts[ab[0]][1],pts[ab[0]][2]);
+        pos.setXYZ(1,pts[ab[1]][0]+xOff,pts[ab[1]][1],pts[ab[1]][2]);
         pos.needsUpdate=true;
         o.bns[e].visible=vis;
       }
@@ -550,8 +564,9 @@ function init3DPanel(cell,pd){
     for(var _b=0;_b<objs[idx].bns.length;_b++){objs[idx].bns[_b].material.color.set(c);}
     objs[idx].color=col;
   }
+  function setSpread(s){spread3d=s;}
   function resize(w,h){rdr.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix();}
-  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,objs:objs};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,setSpread:setSpread,objs:objs};
 }
 
 // ── 2-D panel ─────────────────────────────────────────────────────────────────
@@ -564,12 +579,13 @@ function init2DPanel(cell,pd){
   var objs=ns.map(function(s){return{normed:s.normed,color:s.color,visible:true};});
   var edges2d=pd.edges||EDGES;
   function setFrame(f){
-    ctx.clearRect(0,0,cv.width,cv.height);  // clear before drawing skeleton
+    ctx.clearRect(0,0,cv.width,cv.height);
     var items=objs.filter(function(o){return o.visible;}).map(function(o){return{color:o.color,pts:o.normed[f]};});
     draw2D(ctx,cv.width,cv.height,items,edges2d);
   }
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
   function setSkeletonColor(idx,col){if(objs[idx])objs[idx].color=col;}
+  function setSpread(s){}  // no-op: spreading 2D skeletons breaks spatial alignment
   function resize(w,h){
     cv.width=w;cv.height=h;
     ns=normSkels2D(pd.skeletons,w,h);
@@ -578,7 +594,7 @@ function init2DPanel(cell,pd){
     var oldCol=objs.map(function(o){return o.color;});
     objs=ns.map(function(s,i){return{normed:s.normed,color:oldCol[i]||s.color,visible:oldVis[i]!==undefined?oldVis[i]:true};});
   }
-  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,objs:objs};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,setSpread:setSpread,objs:objs};
 }
 
 // ── Image overlay panel ───────────────────────────────────────────────────────
@@ -635,6 +651,7 @@ function initImageOverlayPanel(cell,pd){
   function setFrame(f){draw(f);}
   function setVisibility(idx,vis){if(objs[idx])objs[idx].visible=vis;}
   function setSkeletonColor(idx,col){if(objs[idx])objs[idx].color=col;}
+  function setSpread(s){}  // spread not meaningful for image overlay — would misalign with background
   function resize(w,h){
     cv.width=w;cv.height=h;
     if(!imageSpace&&pd.skeletons.length){
@@ -643,7 +660,7 @@ function initImageOverlayPanel(cell,pd){
     }
     draw(lastFrame);  // redraw after resize
   }
-  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,objs:objs};
+  return {setFrame:setFrame,resize:resize,setVisibility:setVisibility,setSkeletonColor:setSkeletonColor,setSpread:setSpread,objs:objs};
 }
 
 // ── Per-row shared playback controller ───────────────────────────────────────
@@ -680,6 +697,16 @@ function initRowController(ri,T,panels){
   if(speedSlider) speedSlider.addEventListener('input',function(){
     speed=parseFloat(speedSlider.value);
     if(speedLbl) speedLbl.textContent=speed.toFixed(speed<1?2:1).replace(/\.?0+$/,'')+'x';
+  });
+
+  // ── Spread ────────────────────────────────────────────────────────────────
+  var spreadSlider=extras?extras.querySelector('.spread-slider'):null;
+  var spreadLbl=extras?extras.querySelector('.spread-lbl'):null;
+  if(spreadSlider) spreadSlider.addEventListener('input',function(){
+    var sv=parseFloat(spreadSlider.value);
+    if(spreadLbl) spreadLbl.textContent=sv>0?sv.toFixed(2).replace(/\.?0+$/,''):'0';
+    for(var _spi=0;_spi<panels.length;_spi++){if(panels[_spi].setSpread)panels[_spi].setSpread(sv);}
+    goTo(cur);
   });
 
   // ── Color pickers ──────────────────────────────────────────────────────────
@@ -756,6 +783,10 @@ function initRowController(ri,T,panels){
         if(panel&&panel.setVisibility) panel.setVisibility(_bi,true);
       }
     }
+    // Spread → 0
+    if(spreadSlider){spreadSlider.value=0;}
+    if(spreadLbl){spreadLbl.textContent='0';}
+    for(var _rpi=0;_rpi<panels.length;_rpi++){if(panels[_rpi].setSpread)panels[_rpi].setSpread(0);}
     // Jump to range start
     goTo(rStart);
   });
@@ -972,6 +1003,11 @@ def _playbar_html(row_index: int, T: int) -> str:
     <span class="dual-range-lbl">1 – {T}</span>
   </div>
   <div class="ctrl-group">
+    <label>Spread</label>
+    <input type="range" class="spread-slider" min="0" max="1" step="0.02" value="0" style="width:80px"/>
+    <span class="ctrl-val spread-lbl">0</span>
+  </div>
+  <div class="ctrl-group">
     <label>Colors</label>
     <div class="color-pickers" id="color-pickers-r{row_index}"></div>
   </div>
@@ -996,6 +1032,27 @@ def _skel_badges_html(skeletons: list[dict]) -> str:
             )
     hint = '''<div class="kbd-hint">💡 Click badges · 1-9 keys · Shift+Click=solo</div>''' if len(parts) > 1 else ""
     return ('''<div class="skel-legends">'''  + "".join(parts) + "</div>" + hint) if parts else ""
+
+
+def _row_labels_html(row: dict) -> str:
+    """Full-text label strip for all skeletons in a row, shown below the panels."""
+    seen: dict[str, str] = {}  # color -> label (first occurrence wins)
+    for panel in row["panels"]:
+        for sk in panel.get("skeletons", []):
+            lbl = sk.get("label", "")
+            col = sk.get("color", "#888")
+            if lbl and col not in seen:
+                seen[col] = lbl
+    if not seen:
+        return ""
+    items = "".join(
+        f'<div class="model-label-item">'
+        f'<span class="model-label-dot" style="background:{c}"></span>'
+        f'<span class="model-label-text" style="color:{c}" title="{l}">{l}</span>'
+        f'</div>'
+        for c, l in seen.items()
+    )
+    return f'<div class="row-labels">{items}</div>'
 
 
 def generate_html(
@@ -1047,11 +1104,13 @@ def generate_html(
             cells_html += (
                 f'''<div class="panel-cell" id="cell-r{ri}-c{ci}">{badge}{badges}</div>'''
             )
+        labels_strip = _row_labels_html(row)
         rows_html_parts.append(
             f'''<div class="sample-row">
 <div class="panels-grid" style="grid-template-columns:repeat({ncols},1fr);height:{cell_height}px;">
 {cells_html}
 </div>
+{labels_strip}
 {playbar}
 </div>'''
         )

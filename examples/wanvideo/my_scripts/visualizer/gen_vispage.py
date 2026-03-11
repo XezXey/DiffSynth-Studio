@@ -16,6 +16,14 @@ Grouping modes
 3. --no_group
    Every file gets its own row regardless.
 
+Path layouts
+------------
+Default (4-level):   .../<model_config>/<ckpt_name>/<motion>/res.npz
+With --with_character (5-level):
+                     .../<model_config>/<ckpt_name>/<character>/<motion>/res.npz
+    Groups by "character/motion" so the same character+motion from different
+    checkpoints are overlaid on one row automatically.
+
 Usage examples
 --------------
 # Explicit grouping: first 3 on row 0, 4th on row 1
@@ -28,6 +36,11 @@ python gen_vispage.py --out out.html --prediction_path ckptA_walk.npz ckptB_walk
 
 # Every file on its own row
 python gen_vispage.py --out out.html --no_group --prediction_path *.npz
+
+# Discover all results under a root; 5-level layout with character dir
+# Auto-overlays same character+motion across checkpoints
+python gen_vispage.py --out out.html --with_character \\
+    --discover results/model_A results/model_B
 """
 
 from viz3d_utils import panel_3d, panel_image_overlay, generate_html
@@ -54,40 +67,57 @@ def _shorten(s: str, max_len: int = 28) -> str:
     return s if len(s) <= max_len else s[:max_len - 1] + "…"
 
 
-def _parse_path_labels(npz_path: str) -> tuple[str, str]:
+def _parse_path_labels(npz_path: str, with_character: bool = False) -> tuple[str, str]:
     """
     Infer (motion_name, ckpt_label) from the directory structure.
 
-    Expected layout:  .../<model_config>/<ckpt_name>/<motion_name>/res.npz
+    Default layout (4-level):  .../<model_config>/<ckpt_name>/<motion_name>/res.npz
+        → motion_name = "motion_name"
+        → ckpt_label  = "ckpt_name / model_config"
 
-    Example:
-        .../results/heatmap_TI2V-5B_320x640/model_step_170000/michelle_Jump/res.npz
-        → motion_name = "michelle_Jump"
-        → ckpt_label  = "model_step_170000 / heatmap_TI2V-5B_320x6…"
+    With --with_character (5-level):  .../<model_config>/<ckpt_name>/<character>/<motion_name>/res.npz
+        → motion_name = "character/motion_name"  (used as grouping key)
+        → ckpt_label  = "ckpt_name / model_config"
     """
     parts = Path(npz_path).parts
-    if len(parts) >= 4:
-        motion_name  = parts[-2]
-        ckpt_name    = parts[-3]
-        model_config = parts[-4]
-        ckpt_label   = f"{ckpt_name} / {_shorten(model_config)}"
-    elif len(parts) >= 3:
-        motion_name = parts[-2]
-        ckpt_label  = parts[-3]
-    elif len(parts) >= 2:
-        motion_name = parts[-2]
-        ckpt_label  = parts[-2]
+    if with_character:
+        if len(parts) >= 5:
+            motion_name  = f"{parts[-3]}/{parts[-2]}"
+            ckpt_name    = parts[-4]
+            model_config = parts[-5]
+            ckpt_label   = f"{ckpt_name} / {_shorten(model_config)}"
+        elif len(parts) >= 4:
+            motion_name = f"{parts[-3]}/{parts[-2]}"
+            ckpt_label  = parts[-4]
+        elif len(parts) >= 3:
+            motion_name = f"{parts[-3]}/{parts[-2]}"
+            ckpt_label  = parts[-3]
+        else:
+            motion_name = Path(npz_path).stem
+            ckpt_label  = Path(npz_path).stem
     else:
-        motion_name = Path(npz_path).stem
-        ckpt_label  = Path(npz_path).stem
+        if len(parts) >= 4:
+            motion_name  = parts[-2]
+            ckpt_name    = parts[-3]
+            model_config = parts[-4]
+            ckpt_label   = f"{ckpt_name} / {_shorten(model_config)}"
+        elif len(parts) >= 3:
+            motion_name = parts[-2]
+            ckpt_label  = parts[-3]
+        elif len(parts) >= 2:
+            motion_name = parts[-2]
+            ckpt_label  = parts[-2]
+        else:
+            motion_name = Path(npz_path).stem
+            ckpt_label  = Path(npz_path).stem
     return motion_name, ckpt_label
 
 
 # ── npz loader ────────────────────────────────────────────────────────────────
 
-def _load_npz(path: str) -> dict:
+def _load_npz(path: str, with_character: bool = False) -> dict:
     dat = np.load(path, allow_pickle=True)
-    path_motion, path_ckpt = _parse_path_labels(path)
+    path_motion, path_ckpt = _parse_path_labels(path, with_character=with_character)
 
     motion_name = str(dat["motion_name"]).strip() if "motion_name" in dat else path_motion
     ckpt_label  = Path(str(dat["ckpt"])).stem.strip() if "ckpt" in dat else path_ckpt
@@ -204,6 +234,10 @@ if __name__ == "__main__":
                     help="Directories to recursively search for *.npz files. "
                          "Found files are appended to --prediction_path (sorted). "
                          "E.g.: --discover results_michelle/model_step_100000")
+    ap.add_argument("--with_character", action="store_true",
+                    help="Use 5-level path layout: .../model/ckpt/character/motion/res.npz. "
+                         "The grouping key becomes 'character/motion' so entries from different "
+                         "checkpoints but the same character+motion are overlaid on one row.")
     args = ap.parse_args()
 
     # Auto-discover .npz files from --discover directories
@@ -229,7 +263,7 @@ if __name__ == "__main__":
     entries = []
     for p in all_paths:
         print(f"  {p}")
-        e = _load_npz(p)
+        e = _load_npz(p, with_character=args.with_character)
         if args.no_group:
             e["motion_name"] = Path(p).stem   # unique key → each file gets its own row
         entries.append(e)
