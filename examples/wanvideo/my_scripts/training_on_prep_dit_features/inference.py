@@ -50,6 +50,11 @@ class SkelAg(th.nn.Module):
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).eval()
         self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).eval()
         self.joint_head = th.nn.Conv3d(3, J * out_J_chn, 3, padding=1).eval()
+        print(self.head)
+        print(self.joint_vae)
+        print(self.joint_head)
+        print(dim, out_dim)
+        exit()
 
     def forward_pass(self, batch, start_depth=None):
         inputs = batch
