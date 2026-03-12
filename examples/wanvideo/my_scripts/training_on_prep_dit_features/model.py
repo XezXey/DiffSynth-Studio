@@ -754,9 +754,8 @@ class Decoder3d_38(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.attn_scales = attn_scales
         self.temperal_upsample = temperal_upsample
-
         # dimensions
-        dims = [dim * u for u in [dim_mult[-1]] + dim_mult[::-1]]
+        dims = [int(dim * u) for u in [dim_mult[-1]] + dim_mult[::-1]]
         scale = 1.0 / 2 ** (len(dim_mult) - 2)
         # init block
         self.conv1 = CausalConv3d(z_dim, dims[0], 3, padding=1)
@@ -1130,11 +1129,20 @@ class VAEDecoder38(VAEDecoder):
         return out
     
 class JointVAE38(JointVAE):
-    def __init__(self, z_dim=16, J=25, out_J_chn=2, num_res_blocks=2):
+    def __init__(self, 
+                 z_dim=16, 
+                 J=25, 
+                 out_J_chn=2, 
+                 num_res_blocks=2,
+                 dim_mult=[1, 2, 4, 4]
+                ):
         super().__init__(z_dim, J, out_J_chn, num_res_blocks)
-
         # init model
-        self.model = VAEDecoder38(z_dim=z_dim, num_res_blocks=num_res_blocks).eval().requires_grad_(False)
+        print("[#] Initializing JointVAE38 with z_dim={}, num_res_blocks={}, dim_mult={}".format(z_dim, num_res_blocks, dim_mult))
+        self.model = VAEDecoder38(
+            z_dim=z_dim, 
+            num_res_blocks=num_res_blocks, 
+            dim_mult=dim_mult).eval().requires_grad_(False)
         self.upsampling_factor = 16
     
     

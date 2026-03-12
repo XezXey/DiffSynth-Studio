@@ -18,6 +18,7 @@ if __name__ == "__main__":
     parser.add_argument("--J", type=int, default=25, help="Number of joints.")
     parser.add_argument("--out_J_chn", type=int, default=2, help="Output channels for each joint.")
     parser.add_argument("--preferred_dit_block_id", type=int, default=-1, help="Preferred DiT block ID.")
+    parser.add_argument("--dim_mult", nargs="+", type=int, default=[1, 2, 4, 4], help="Dimension multiplier for each layer in the JointVAE38. Should be a list of integers.")
     parser.add_argument("--n_gpus", type=int, default=1, help="Number of GPUs to use for training.")
     # Training parameters
     parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate for training.")
@@ -68,6 +69,7 @@ if __name__ == "__main__":
     logger.info(f"J: {args.J}")
     logger.info(f"out_J_chn: {args.out_J_chn}")
     logger.info(f"predict_motion_dt: {args.predict_motion_dt}")
+    logger.info(f"dim_mult: {args.dim_mult}")
 
     logger.warning("Dataset:")
     logger.info(f"train_dit_features_path: {args.train_dit_features_path}")
@@ -113,6 +115,7 @@ if __name__ == "__main__":
         patch_size=patch_size, 
         J=args.J,
         out_J_chn=args.out_J_chn, 
+        dim_mult=args.dim_mult,
         preferred_dit_block_id=args.preferred_dit_block_id, 
         lr=args.learning_rate,
         log_dir=args.output_path,

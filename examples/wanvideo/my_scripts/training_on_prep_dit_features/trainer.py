@@ -27,13 +27,14 @@ class TrainOnDiTFeatures(L.LightningModule):
             logger,
             predict_motion_dt=False,
             eps=1e-8, 
+            dim_mult=[1, 2, 4, 4],  # Default dim_mult for JointVAE38
             num_res_blocks=0, 
             lr=1e-4,
             val_dit_features_path=None,
             ):
         super().__init__()
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).train()
-        self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).train()
+        self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=dim_mult).train()
         self.joint_head = th.nn.Conv3d(3, J * out_J_chn, 3, padding=1).train()
         self.lr = lr
         self.preferred_dit_block_id = preferred_dit_block_id

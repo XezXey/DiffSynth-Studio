@@ -36,6 +36,7 @@ class SkelAg(th.nn.Module):
                 patch_size,
                 J,
                 out_J_chn,
+                dim_mult=[1, 2, 4, 4],
                 num_res_blocks=0,
                 predict_motion_dt=False,
                 eps=1e-8):
@@ -44,17 +45,17 @@ class SkelAg(th.nn.Module):
         self.out_dim = out_dim
         self.patch_size = patch_size
         self.J = J
+        self.dim_mult = dim_mult
         self.out_J_chn = out_J_chn
         self.predict_motion_dt = predict_motion_dt
 
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).eval()
-        self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks).eval()
+        self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=dim_mult).eval()
+        # self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=[0.5, 1, 2, 2]).eval()
+        # self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=[1, 1, 2, 2]).eval()
+        # self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=[1, 2, 4, 4]).eval()
+        # self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=[2, 4, 8, 8]).eval()
         self.joint_head = th.nn.Conv3d(3, J * out_J_chn, 3, padding=1).eval()
-        print(self.head)
-        print(self.joint_vae)
-        print(self.joint_head)
-        print(dim, out_dim)
-        exit()
 
     def forward_pass(self, batch, start_depth=None):
         inputs = batch
@@ -64,7 +65,9 @@ class SkelAg(th.nn.Module):
         patch_size = inputs["patch_size"]
 
         out_head = self.head(inp)  # 1, out_dim, H, W
+        print(out_head.shape)
         out_unpatched = unpatchify(out_head, grid_size, patch_size)  # 1, out_dim, T, H, W
+        print(out_unpatched.shape)
         out_decoded = self.joint_vae.decode(out_unpatched, device='cuda')  # 1, J*3, T, 1, 1
         out_joints_map = self.joint_head(out_decoded)  # 1, J*2, T, 1, 1
 
@@ -142,13 +145,13 @@ if __name__ == "__main__":
 
     # Initialize model
     model = SkelAg(dim=dim, out_dim=out_dim, patch_size=patch_size, J=args.J, out_J_chn=args.out_J_chn, predict_motion_dt=args.predict_motion_dt).cuda(args.gpu_id)
-    mean_init, std_init = model.get_params_stats()
-    logger.warning(f"Model initialized. Param mean: {mean_init:.6f}, std: {std_init:.6f}")
-    state_dict = th.load(args.ckpt, map_location="cpu")
-    model.load_state_dict(state_dict)
-    mean_loaded, std_loaded = model.get_params_stats()
-    logger.warning(f"Model loaded from checkpoint. Param mean: {mean_loaded:.6f}, std: {std_loaded:.6f}")
-    assert abs(mean_loaded - mean_init) > 1e-5 or abs(std_loaded - std_init) > 1e-5, "Model parameters do not seem to be loaded properly (mean/std are almost the same as initialized). Please check the checkpoint path and content."
+    # mean_init, std_init = model.get_params_stats()
+    # logger.warning(f"Model initialized. Param mean: {mean_init:.6f}, std: {std_init:.6f}")
+    # state_dict = th.load(args.ckpt, map_location="cpu")
+    # model.load_state_dict(state_dict)
+    # mean_loaded, std_loaded = model.get_params_stats()
+    # logger.warning(f"Model loaded from checkpoint. Param mean: {mean_loaded:.6f}, std: {std_loaded:.6f}")
+    # assert abs(mean_loaded - mean_init) > 1e-5 or abs(std_loaded - std_init) > 1e-5, "Model parameters do not seem to be loaded properly (mean/std are almost the same as initialized). Please check the checkpoint path and content."
     model.eval().cuda(args.gpu_id)
 
     n_motion = 0
