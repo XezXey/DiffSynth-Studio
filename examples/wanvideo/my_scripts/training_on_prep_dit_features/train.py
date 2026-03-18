@@ -86,6 +86,7 @@ if __name__ == "__main__":
         args.limit_val_batches = 0.0
 
     # Create output directories
+    args.output_path = os.path.join(args.output_path, args.wandb_save_name)
     os.makedirs(args.output_path + "/wandb", exist_ok=True)
     os.makedirs(args.output_path + "/vis", exist_ok=True)
     os.makedirs(args.output_path + "/ckpt", exist_ok=True)
