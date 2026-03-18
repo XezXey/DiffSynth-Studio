@@ -185,3 +185,4 @@ examples/wanvideo/my_scripts/training_on_prep_dit_features/results_dt
 examples/wanvideo/my_scripts/training_on_prep_dit_features/results_ar
 examples/wanvideo/my_scripts/training_on_prep_dit_features/tmp_results
 dev/prepare_data/Mixamo/download_dataset
+dev/prepare_data/Mixamo/blender_bin
