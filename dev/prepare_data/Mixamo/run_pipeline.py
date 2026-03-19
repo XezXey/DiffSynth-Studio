@@ -101,6 +101,7 @@ def _parse_args() -> argparse.Namespace:
     s1.add_argument("--run_projection",   action="store_true")
     s1.add_argument("--only_body_joints", action="store_true")
     s1.add_argument("--skip_plot_map",    action="store_true")
+    s1.add_argument("--blender_bin",      type=str,   default="./blender_bin/blender-5.0.0-linux-x64/blender",)
 
     # ── step 3: chunk ─────────────────────────────────────────────────────────
     s3 = p.add_argument_group("step 3 – chunk  (chunk_data_multiple_chars.py)")
@@ -175,7 +176,8 @@ def step1_render(a: argparse.Namespace) -> None:
     if a.run_projection:   flags += " --run_projection"
     if a.only_body_joints: flags += " --only_body_joints"
     if a.skip_plot_map:    flags += " --skip_plot_map"
-    if a.host_prefix == "/host": flags += " --blender_bin /host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender"
+    flags += f" --blender_bin \"{a.blender_bin}\""
+    # if a.host_prefix == "/host": flags += f" --blender_bin {a.blender_bin}"
 
     cmd = (
         f'python run_multiple_chars.py'

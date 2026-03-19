@@ -35,9 +35,9 @@ if __name__ == '__main__':
         video_frames = torchvision.io.read_video(video_path, pts_unit='sec')[0]  # (T, H, W, C)
         T_vid = video_frames.shape[0]
         motion = np.load(motion_path)
-        assert T_vid == motion['joints_3d'].shape[0], "Mismatch in number of frames between video and motion data."
-        assert T_vid == motion['joints_2d'].shape[0], "Mismatch in number of frames between video and motion data."
-        assert T_vid == motion['cams_extr'].shape[0], "Mismatch in number of frames between video and camera extrinsics."
+        assert T_vid == motion['joints_3d'].shape[0], f"Mismatch in number of frames between video (T={T_vid}) and motion (T={motion['joints_3d'].shape[0]}): {video_path}"
+        assert T_vid == motion['joints_2d'].shape[0], f"Mismatch in number of frames between video (T={T_vid}) and motion (T={motion['joints_2d'].shape[0]}): {video_path}"
+        assert T_vid == motion['cams_extr'].shape[0], f"Mismatch in number of frames between video (T={T_vid}) and camera extrinsics (T={motion['cams_extr'].shape[0]}): {video_path}"
 
         # Chunk video frames into overlapping segments
         video_chunks = []
