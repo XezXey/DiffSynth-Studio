@@ -2,7 +2,7 @@ import os
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--blender_bin', default='/host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender', type=str, help='Path to Blender executable')
-parser.add_argument('--fbx', type=str, required=True, help='Path to input FBX file')
+parser.add_argument('--fbx', nargs='+', type=str, required=True, help='Path to input FBX file')
 parser.add_argument('--out_dir', type=str, required=True, help='Output directory')
 parser.add_argument('--n_cam', type=int, default=1, help='Number of cameras to create')
 parser.add_argument('--follow_bone', type=str, default='mixamorig:Hips', help='Bone name for the camera to follow')
@@ -13,8 +13,7 @@ parser.add_argument('--img_height', type=int, default=512, help='Image height')
 parser.add_argument('--run_blender', action='store_true', default=False, help='Enable blender execution')
 parser.add_argument('--run_projection', action='store_true', default=False, help='Enable 2D projection after rendering')
 parser.add_argument('--use_gpu', action='store_true', default=False, help='Use GPU for rendering in Blender')
-parser.add_argument('--cam_workers', type=int, default=1, help='Number of worker processes for camera rendering')
-parser.add_argument('--frame_workers', type=int, default=8, help='Number of worker processes for frame rendering')
+parser.add_argument('--gpu_id', type=str, default='0', help='GPU ID(s) to use for rendering (e.g. "0", "0,1", "0-3")')
 parser.add_argument('--only_body_joints', action='store_true', default=False, help='Only render body joints without the fingers')
 parser.add_argument('--skip_plot_map', action='store_true', default=False, help='Skip plotting the 2D joint heatmap and skeleton overlay on the rendered images')
 args = parser.parse_args()
@@ -24,7 +23,7 @@ args = parser.parse_args()
 if __name__ == "__main__":
     if args.run_blender:
         # Arguments for Blender script
-        fbx = f"--fbx \"{args.fbx}\""
+        fbx = f"--fbx {' '.join(args.fbx)}"
         out_dir = f"--out_dir \"{args.out_dir}\""
         n_cam = f"--n_cam {args.n_cam}"
         follow_bone = f"--follow_bone {args.follow_bone}"
@@ -37,6 +36,7 @@ if __name__ == "__main__":
 
         blender_cmd = f"python ./blender_render.py -- {fbx} {out_dir} {render_settings}"
         blender_cmd += " --use_gpu" if args.use_gpu else ""
+        blender_cmd += f" --gpu_id {args.gpu_id}"
         print(blender_cmd)
         os.system(blender_cmd)
         print("#" * 100)

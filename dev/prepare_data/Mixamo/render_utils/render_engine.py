@@ -78,6 +78,7 @@ def configure_render_engine(
     enable_gi:
         If True, enable global illumination (more expensive).
     """
+    print("#" * 100, flush=True)
     if legacy_mode:
         print("[#] Legacy mode: render settings unchanged.", flush=True)
         return
@@ -92,6 +93,7 @@ def configure_render_engine(
         scene.render.engine = "CYCLES"
         scene.cycles.samples = samples
         if not enable_gi:
+            print("[#] Disabling global illumination for faster renders (may cause darker shadows and less realistic lighting).", flush=True)
             scene.cycles.max_bounces          = 0   # total
             scene.cycles.diffuse_bounces      = 0   # no colour bleeding / GI
             scene.cycles.glossy_bounces       = 0   # keep one for basic reflections
@@ -128,3 +130,4 @@ def configure_render_engine(
     # General quality / speed tweaks
     scene.render.use_simplify = True
     scene.render.simplify_subdivision = 0
+    print("#" * 100, flush=True)

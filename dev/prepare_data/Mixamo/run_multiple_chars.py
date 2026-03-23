@@ -15,10 +15,16 @@ Layout
   main()              – discover dirs → collect tasks → dispatch to UI
 """
 
+import numpy as np
 import glob
 import os
 import sys
+import torch as th
 import shlex
+import subprocess
+import time
+from multiprocessing import Pool
+from datetime import datetime
 
 # ── resolve shared display utils ──────────────────────────────────────────────
 _UTILS_ROOT = os.path.abspath(
@@ -70,14 +76,14 @@ def _parse_args():
                    help="Enable 2-D projection after rendering.")
     p.add_argument("--use_gpu",           action="store_true", default=False,
                    help="Use GPU for Blender rendering.")
+    p.add_argument("--gpu_id",            type=str, nargs="+", default="0",
+                   help="GPU ID(s) to use for rendering.")
     p.add_argument("--only_body_joints",  action="store_true", default=False,
                    help="Render body joints only (no fingers).")
     p.add_argument("--skip_plot_map",     action="store_true", default=False,
                    help="Skip 2-D joint heatmap / skeleton overlay plotting.")
-    p.add_argument("--cam_workers",       type=int, default=1,
-                   help="Number of worker processes for camera rendering in Blender.")
-    p.add_argument("--frame_workers",     type=int, default=8,
-                   help="Number of worker processes for frame rendering in Blender.")
+    p.add_argument("--n_gpus",       type=int, default=1,
+                   help="Available GPU count for splitting the fbx files.")
     return p.parse_args()
 
 
@@ -85,7 +91,7 @@ def _parse_args():
 # Command builder
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _build_command(motion_file: str, char_output_dir: str, args) -> str:
+def _build_command(motion_file: str, char_output_dir: str, gpu_id: str, args) -> str:
     """Return the complete shell command to process one FBX file."""
     render = (
         f"--n_cam {args.n_cam}"
@@ -95,8 +101,7 @@ def _build_command(motion_file: str, char_output_dir: str, args) -> str:
         f" --img_width {args.img_width}"
         f" --img_height {args.img_height}"
         f" --blender_bin \"{args.blender_bin}\""
-        f" --cam_workers {args.cam_workers}"
-        f" --frame_workers {args.frame_workers}"
+        f" --gpu_id {gpu_id}"
     )
     cmd = (
         f"python run_blender.py --fbx {shlex.quote(motion_file)}"
@@ -128,17 +133,155 @@ def _collect_tasks(character_dirs: list, args) -> list:
         if not fbx_files:
             print(f"⚠  No FBX files in {char_dir} – skipping.")
             continue
-        for motion_file in fbx_files:
+        if th.cuda.is_available() and args.n_gpus > th.cuda.device_count():
+            print(f"⚠  Requested {args.n_gpus} GPUs but only {th.cuda.device_count()} available. Adjusting to available count.")
+            args.n_gpus = th.cuda.device_count()
+        
+        print(f"Character: {char_name} | {len(fbx_files)} motion file(s) found.")
+        
+        if args.gpu_id is None:
+            gpu_ids = [str(i) for i in range(args.n_gpus)]
+        else:
+            gpu_ids = args.gpu_id
+        
+        for j, motion_file in enumerate(fbx_files):
+            # Round-robin assign GPU
+            gpu_id = gpu_ids[j % len(gpu_ids)]
             motion_name = os.path.basename(motion_file)
-            label       = f"{char_name}/{motion_name}"
-            out_dir     = os.path.join(args.output_dir, char_name)
+            label = f"{char_name}/{motion_name}"
+            out_dir = os.path.join(args.output_dir, char_name)
             os.makedirs(out_dir, exist_ok=True)
-            tasks.append((label, _build_command(motion_file, out_dir, args)))
+            tasks.append((label, _build_command(motion_file, out_dir, gpu_id, args)))
     return tasks
 
+
 # ══════════════════════════════════════════════════════════════════════════════
-# Entry point
+# Multi-GPU batch runner using process pool (output to log files)
 # ══════════════════════════════════════════════════════════════════════════════
+
+def _run_task_with_gpu(task_input: dict) -> dict:
+    """
+    Worker process: run one task, redirect output to log file, return result.
+    
+    Parameters
+    ----------
+    task_input : dict with keys:
+        - global_idx: task index for result ordering
+        - label: human-readable task label
+        - command: shell command to run
+        - gpu_id: GPU ID (set as CUDA_VISIBLE_DEVICES)
+        - log_dir: directory to write log file
+    
+    Returns
+    -------
+    dict with keys:
+        - global_idx: index for ordering
+        - label: task label
+        - success: True if exit code 0
+        - log_file: path to log file
+    """
+    global_idx = task_input['global_idx']
+    label = task_input['label']
+    command = task_input['command']
+    gpu_id = task_input['gpu_id']
+    log_dir = task_input['log_dir']
+    
+    # Clean label for filename
+    safe_label = label.replace("/", "_").replace(" ", "_")[:50]
+    log_file = os.path.join(log_dir, f"gpu{gpu_id}_{safe_label}.log")
+    
+    # Set GPU for this process
+    env = os.environ.copy()
+    env['CUDA_VISIBLE_DEVICES'] = gpu_id
+    
+    # Run and redirect to log file
+    try:
+        with open(log_file, 'w') as f:
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                env=env,
+                universal_newlines=True,
+            )
+            proc.wait()
+            success = proc.returncode == 0
+    except Exception as e:
+        with open(log_file, 'a') as f:
+            f.write(f"\n[ERROR] Exception: {e}\n")
+        success = False
+    
+    return {
+        'global_idx': global_idx,
+        'label': label,
+        'success': success,
+        'log_file': log_file,
+    }
+
+
+def _run_multi_gpu_batch(tasks: list, gpu_ids: list, log_base_dir: str) -> list:
+    """
+    Run tasks in parallel using process pool, each GPU gets own worker.
+    Output redirected to log files per GPU/task.
+    
+    Parameters
+    ----------
+    tasks     : list of (label, command) tuples
+    gpu_ids   : list of GPU IDs (strings)
+    log_base_dir : directory to store log files
+    
+    Returns
+    -------
+    list[bool] — success flag for each task (in original order)
+    """
+    if not tasks or not gpu_ids:
+        return []
+    
+    os.makedirs(log_base_dir, exist_ok=True)
+    
+    # Prepare task inputs with GPU assignment (round-robin)
+    task_inputs = []
+    for idx, (label, cmd) in enumerate(tasks):
+        gpu_id = gpu_ids[idx % len(gpu_ids)]
+        task_inputs.append({
+            'global_idx': idx,
+            'label': label,
+            'command': cmd,
+            'gpu_id': gpu_id,
+            'log_dir': log_base_dir,
+        })
+    
+    # Run tasks in parallel using process pool
+    num_workers = len(gpu_ids)
+    print(f"\nSpawning {num_workers} worker processes ({len(gpu_ids)} GPUs)...")
+    print(f"Logs will be written to: {log_base_dir}\n")
+    
+    with Pool(processes=num_workers) as pool:
+        results = []
+        task_count = len(task_inputs)
+        
+        # Use imap_unordered for live progress feedback
+        for i, result in enumerate(pool.imap_unordered(_run_task_with_gpu, task_inputs), 1):
+            idx = result['global_idx']
+            label = result['label']
+            success = result['success']
+            log_file = result['log_file']
+            status = "✓" if success else "✗"
+            print(f"[{i:4d}/{task_count}] {status} {label}  →  {log_file}")
+            results.append((idx, success))
+    
+    # Reconstruct results in original task order
+    results_dict = {idx: ok for idx, ok in results}
+    ordered_results = [results_dict[i] for i in range(len(tasks))]
+    
+    passed = sum(ordered_results)
+    print(f"\n{'='*70}")
+    print(f"Completed: {passed}/{len(tasks)} succeeded, {len(tasks)-passed} failed")
+    print(f"Logs: {log_base_dir}")
+    print(f"{'='*70}\n")
+    
+    return ordered_results
 
 def main() -> None:
     args = _parse_args()
@@ -153,13 +296,21 @@ def main() -> None:
 
     print(f"Found {len(character_dirs)} character(s) | {len(tasks)} motion file(s)\n")
 
-    if HAS_RICH:
+    # Choose execution mode
+    if args.n_gpus > 1:
+        # Multi-GPU parallel mode with process pool (output to logs)
+        log_dir = os.path.join(args.output_dir, "_logs")
+        gpu_ids = [str(i) for i in range(args.n_gpus)] if args.gpu_id is None else args.gpu_id
+        results = _run_multi_gpu_batch(tasks, gpu_ids, log_dir)
+    elif HAS_RICH:
+        # Sequential mode with rich progress
         results = run_batch(
             tasks,
             overall_description="Processing motion files...",
             max_log_lines=args.max_log_lines,
         )
     else:
+        # Fallback: sequential plain output
         results = run_plain_batch(tasks)
 
     failed = [tasks[i][0] for i, ok in enumerate(results) if not ok]

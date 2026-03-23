@@ -469,7 +469,9 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
     # Discover FBX files if given a folder instead a list of files
+    print("GG")
     print(args.fbx_path)
+    print("GG")
     if os.path.isdir(args.fbx_path[0]):
         fbx_files = sorted(glob.glob(os.path.join(args.fbx_path, "*.fbx")))
     else:
