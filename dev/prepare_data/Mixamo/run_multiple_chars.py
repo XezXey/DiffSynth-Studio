@@ -18,6 +18,7 @@ Layout
 import glob
 import os
 import sys
+import shlex
 
 # ── resolve shared display utils ──────────────────────────────────────────────
 _UTILS_ROOT = os.path.abspath(
@@ -88,7 +89,7 @@ def _build_command(motion_file: str, char_output_dir: str, args) -> str:
     """Return the complete shell command to process one FBX file."""
     render = (
         f"--n_cam {args.n_cam}"
-        f" --follow_bone {args.follow_bone}"
+        f" --follow_bone {shlex.quote(args.follow_bone)}"
         f" --cam_height {args.cam_height}"
         f" --cam_radius {args.cam_radius}"
         f" --img_width {args.img_width}"
@@ -97,7 +98,10 @@ def _build_command(motion_file: str, char_output_dir: str, args) -> str:
         f" --cam_workers {args.cam_workers}"
         f" --frame_workers {args.frame_workers}"
     )
-    cmd = f'python run.py --fbx "{motion_file}" --out_dir "{char_output_dir}" {render}'
+    cmd = (
+        f"python run_blender.py --fbx {shlex.quote(motion_file)}"
+        f" --out_dir {shlex.quote(char_output_dir)} {render}"
+    )
     if args.use_gpu:          cmd += " --use_gpu"
     if args.run_blender:      cmd += " --run_blender"
     if args.run_projection:   cmd += " --run_projection"
@@ -131,7 +135,6 @@ def _collect_tasks(character_dirs: list, args) -> list:
             os.makedirs(out_dir, exist_ok=True)
             tasks.append((label, _build_command(motion_file, out_dir, args)))
     return tasks
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Entry point

@@ -44,10 +44,6 @@ import math
 import subprocess
 import argparse
 
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-
 # ---------------------------------------------------------------------------
 # Make sibling packages importable
 # ---------------------------------------------------------------------------
@@ -171,6 +167,17 @@ def export_skeletons(
 # Step 2A – Sequential render (in-process, no child Blender)
 # ---------------------------------------------------------------------------
 
+def make_pre_render_handler(arm, resolved_bone, cam_obj, cam_offset, frame_list):
+    def handler(scene, depsgraph):
+        frame = scene.frame_current
+        if frame not in frame_list:
+            return
+        pb = arm.pose.bones[resolved_bone]
+        bone_pos = arm.matrix_world @ pb.head
+        cam_obj.location = bone_pos + cam_offset
+        _look_at(cam_obj, bone_pos)
+    return handler
+
 def render_sequential(
     arm,
     scene,
@@ -186,9 +193,101 @@ def render_sequential(
     render_engine: str,
     render_samples: int,
     use_gpu: bool,
+    enable_gi: bool,
     legacy_mode: bool,
 ):
     """Render every camera × every frame in the current Blender process."""
+    configure_render_engine(
+        scene,
+        engine=render_engine,
+        samples=render_samples,
+        use_gpu=use_gpu,
+        legacy_mode=legacy_mode,
+        enable_gi=enable_gi,
+    )
+    resolved_bone = resolve_follow_bone(arm, follow_bone)
+    render_frames = list(range(start_frame, end_frame + 1, sub_sampling))
+    total_frames = len(render_frames)
+    frame_set = set(render_frames)
+
+    for cam_idx in range(n_cam):
+        cam_offset = camera_offset_for_index(cam_idx, n_cam, radius, height)
+        out_subdir = os.path.join(out_dir, anim_name, f"cam-{cam_idx}")
+        os.makedirs(out_subdir, exist_ok=True)
+
+        cam_data = bpy.data.cameras.new(name=f"Cam-{cam_idx}")
+        cam_obj  = bpy.data.objects.new(f"Cam-{cam_idx}", cam_data)
+        scene.collection.objects.link(cam_obj)
+        scene.camera = cam_obj
+
+        print(f"\n[#] Rendering cam-{cam_idx} ({total_frames} frames) → {out_subdir}",
+              flush=True)
+
+        # --- track render progress for printing ---
+        rendered_count = [0]
+
+        def pre_render_handler(scn, depsgraph):
+            if scn.frame_current not in frame_set:
+                return
+            bpy.context.view_layer.update()  # ensure armature is evaluated for this frame
+            pb = arm.pose.bones[resolved_bone]
+            bone_pos = arm.matrix_world @ pb.head
+            cam_obj.location = bone_pos + cam_offset
+            _look_at(cam_obj, bone_pos)
+
+        def post_render_handler(scn, depsgraph):
+            """Runs after each frame — print progress."""
+            if scn.frame_current not in frame_set:
+                return
+            rendered_count[0] += 1
+            print(
+                f"[#] cam-{cam_idx} frame {scn.frame_current}/{end_frame} "
+                f"({rendered_count[0]}/{total_frames})",
+                flush=True,
+            )
+
+        # Register handlers
+        bpy.app.handlers.render_pre.append(pre_render_handler)
+        bpy.app.handlers.render_post.append(post_render_handler)
+
+        try:
+            # Set frame range and output — single render call keeps Cycles warm
+            scene.frame_start = render_frames[0]
+            scene.frame_end   = render_frames[-1]
+            scene.frame_step  = sub_sampling
+            scene.render.filepath = os.path.join(out_subdir, "frame####.png")
+
+            bpy.ops.render.render(animation=True)
+
+        finally:
+            # Always clean up handlers even if render fails
+            bpy.app.handlers.render_pre.remove(pre_render_handler)
+            bpy.app.handlers.render_post.remove(post_render_handler)
+
+            # Clean up camera before next view
+            bpy.data.objects.remove(cam_obj, do_unlink=True)
+            bpy.data.cameras.remove(cam_data, do_unlink=True)
+
+"""
+def render_sequential(
+    arm,
+    scene,
+    out_dir: str,
+    anim_name: str,
+    n_cam: int,
+    radius: float,
+    height: float,
+    follow_bone: str,
+    start_frame: int,
+    end_frame: int,
+    sub_sampling: int,
+    render_engine: str,
+    render_samples: int,
+    use_gpu: bool,
+    enable_gi: bool,
+    legacy_mode: bool,
+):
+    # Render every camera × every frame in the current Blender process.
 
     configure_render_engine(
         scene,
@@ -196,6 +295,7 @@ def render_sequential(
         samples=render_samples,
         use_gpu=use_gpu,
         legacy_mode=legacy_mode,
+        enable_gi=enable_gi,
     )
 
     resolved_bone = resolve_follow_bone(arm, follow_bone)
@@ -226,7 +326,8 @@ def render_sequential(
             bpy.context.view_layer.update()
 
             scene.render.filepath = os.path.join(out_subdir, f"frame{frame:04d}.png")
-            bpy.ops.render.render(write_still=True)
+            # bpy.ops.render.render(write_still=True)
+            bpy.ops.render.render(animation=True)
 
             print(
                 f"[#] cam-{cam_idx} frame {frame}/{end_frame} "
@@ -237,165 +338,7 @@ def render_sequential(
         # Clean up camera before next view
         bpy.data.objects.remove(cam_obj, do_unlink=True)
         bpy.data.cameras.remove(cam_data, do_unlink=True)
-
-
-# ---------------------------------------------------------------------------
-# Step 2B – Parallel render (spawn child Blender processes)
-# ---------------------------------------------------------------------------
-
-def _split_frame_range(start: int, end: int, sub_sampling: int, n_chunks: int):
-    """
-    Divide [start, end] (step=sub_sampling) into n_chunks contiguous ranges.
-    Returns list of (chunk_start, chunk_end) inclusive tuples.
-    """
-    all_frames = list(range(start, end + 1, sub_sampling))
-    if not all_frames:
-        return [(start, end)]
-    chunk_size = math.ceil(len(all_frames) / n_chunks)
-    chunks = []
-    for i in range(0, len(all_frames), chunk_size):
-        seg = all_frames[i : i + chunk_size]
-        chunks.append((seg[0], seg[-1]))
-    return chunks
-
-
-def _build_blender_cmd(
-    blender_bin, fbx_path, out_dir, cam_idx, n_cam,
-    cam_height, cam_radius, follow_bone, char_color,
-    start_motion_frame, sub_sampling,
-    img_width, img_height,
-    render_engine, render_samples,
-    use_gpu, legacy_mode,
-    frame_start=None, frame_end=None,
-):
-    cmd = [
-        blender_bin, "--background",
-        "--python", _RENDER_SCRIPT, "--",
-        "--fbx_path",           fbx_path,
-        "--out_dir",            out_dir,
-        "--cam_idx",            str(cam_idx),
-        "--n_cam",              str(n_cam),
-        "--cam_height",         str(cam_height),
-        "--cam_radius",         str(cam_radius),
-        "--follow_bone",        follow_bone,
-        "--start_motion_frame", str(start_motion_frame),
-        "--sub_sampling",       str(sub_sampling),
-        "--img_width",          str(img_width),
-        "--img_height",         str(img_height),
-        "--render_engine",      render_engine,
-        "--render_samples",     str(render_samples),
-    ]
-    if char_color:
-        cmd += ["--char_color", char_color]
-    if use_gpu:
-        cmd.append("--use_gpu")
-    if legacy_mode:
-        cmd.append("--legacy_mode")
-    if frame_start is not None:
-        cmd += ["--frame_start", str(frame_start)]
-    if frame_end is not None:
-        cmd += ["--frame_end", str(frame_end)]
-    return cmd
-
-
-def _run_job(job: dict) -> dict:
-    cmd, log_path, label = job["cmd"], job["log_path"], job["label"]
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    with open(log_path, "w") as fh:
-        result = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT, text=True)
-    return {"label": label, "returncode": result.returncode, "log_path": log_path}
-
-
-def render_parallel(
-    fbx_path: str,
-    out_dir: str,
-    anim_name: str,
-    n_cam: int,
-    cam_height: float,
-    cam_radius: float,
-    follow_bone: str,
-    char_color,
-    start_motion_frame: int,
-    sub_sampling: int,
-    img_width: int,
-    img_height: int,
-    render_engine: str,
-    render_samples: int,
-    use_gpu: bool,
-    legacy_mode: bool,
-    start_frame: int,
-    end_frame: int,
-    cam_workers: int,
-    frame_workers: int,
-    blender_bin: str,
-    dry_run: bool = False,
-):
-    """
-    Build the job matrix (n_cam × frame_chunks) and run them in parallel.
-    Total concurrent workers = cam_workers × frame_workers.
-    """
-    frame_chunks = frame_workers  # one chunk per frame-worker
-    chunks = _split_frame_range(start_frame, end_frame, sub_sampling, frame_chunks)
-    total_workers = cam_workers * frame_workers
-
-    print(
-        f"[parallel] {anim_name}: {n_cam} cam(s) × {len(chunks)} chunk(s) "
-        f"= {n_cam * len(chunks)} job(s)  ·  max {total_workers} workers",
-        flush=True,
-    )
-
-    jobs = []
-    for cam_idx in range(n_cam):
-        out_subdir = os.path.join(out_dir, anim_name, f"cam-{cam_idx}")
-        for ci, (cs, ce) in enumerate(chunks):
-            label    = f"{anim_name}/cam-{cam_idx}/chunk-{ci:03d}"
-            log_path = os.path.join(out_subdir, f"render-log_chunk-{ci:03d}.txt")
-            cmd = _build_blender_cmd(
-                blender_bin=blender_bin, fbx_path=fbx_path,
-                out_dir=out_subdir, cam_idx=cam_idx, n_cam=n_cam,
-                cam_height=cam_height, cam_radius=cam_radius,
-                follow_bone=follow_bone, char_color=char_color,
-                start_motion_frame=start_motion_frame,
-                sub_sampling=sub_sampling,
-                img_width=img_width, img_height=img_height,
-                render_engine=render_engine, render_samples=render_samples,
-                use_gpu=use_gpu, legacy_mode=legacy_mode,
-                frame_start=cs, frame_end=ce,
-            )
-            jobs.append({
-                "cmd": cmd, "log_path": log_path, "label": label,
-                "out_dir": out_subdir,
-                "expected_frames": len(range(cs, ce + 1, sub_sampling)),
-            })
-
-    if dry_run:
-        for j in jobs:
-            print(" ".join(j["cmd"]))
-        return
-
-    # Build per-directory expected frame counts
-    dir_expectations = defaultdict(int)
-    for job in jobs:
-        dir_expectations[job["out_dir"]] += job["expected_frames"]
-
-    # Run with progress tracking
-    total = len(jobs)
-    tracker = create_tracker(dict(dir_expectations), poll_interval=7.0)
-    tracker.start()
-
-    try:
-        with ThreadPoolExecutor(max_workers=total_workers) as pool:
-            futures = {pool.submit(_run_job, j): j for j in jobs}
-            for fut in as_completed(futures):
-                r = fut.result()
-                tracker.record_job_result(
-                    r["label"], r["returncode"], r["log_path"],
-                )
-    finally:
-        tracker.stop()
-
-    tracker.print_summary()
-
+"""
 
 # ---------------------------------------------------------------------------
 # Per-FBX driver
@@ -444,43 +387,19 @@ def process_fbx(args, fbx_path: str):
     )
 
     # ---- Step 2: render ----
-    is_parallel = (args.cam_workers is not None and args.cam_workers >= 1) or \
-                  (args.frame_workers is not None and args.frame_workers >= 1)
-
-    if is_parallel:
-        cam_workers   = args.cam_workers   or 1
-        frame_workers = args.frame_workers or 1
-        render_parallel(
-            fbx_path=fbx_path,
-            out_dir=args.out_dir, anim_name=anim_name,
-            n_cam=args.n_cam,
-            cam_height=args.cam_height, cam_radius=args.cam_radius,
-            follow_bone=args.follow_bone, char_color=args.char_color,
-            start_motion_frame=args.start_motion_frame,
-            sub_sampling=args.sub_sampling,
-            img_width=args.img_width, img_height=args.img_height,
-            render_engine=args.render_engine,
-            render_samples=args.render_samples,
-            use_gpu=args.use_gpu, legacy_mode=args.legacy_mode,
-            start_frame=start_frame, end_frame=end_frame,
-            cam_workers=cam_workers, frame_workers=frame_workers,
-            blender_bin=args.blender_bin,
-            dry_run=args.dry_run,
-        )
-    else:
-        render_sequential(
-            arm=arm, scene=scene,
-            out_dir=args.out_dir, anim_name=anim_name,
-            n_cam=args.n_cam,
-            radius=args.cam_radius, height=args.cam_height,
-            follow_bone=args.follow_bone,
-            start_frame=start_frame, end_frame=end_frame,
-            sub_sampling=args.sub_sampling,
-            render_engine=args.render_engine,
-            render_samples=args.render_samples,
-            use_gpu=args.use_gpu, legacy_mode=args.legacy_mode,
-        )
-
+    render_sequential(
+        arm=arm, scene=scene,
+        out_dir=args.out_dir, anim_name=anim_name,
+        n_cam=args.n_cam,
+        radius=args.cam_radius, height=args.cam_height,
+        follow_bone=args.follow_bone,
+        start_frame=start_frame, end_frame=end_frame,
+        sub_sampling=args.sub_sampling,
+        render_engine=args.render_engine,
+        render_samples=args.render_samples,
+        use_gpu=args.use_gpu, legacy_mode=args.legacy_mode,
+        enable_gi=args.enable_gi,
+    )
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -494,24 +413,18 @@ def parse_args():
         description="Unified Mixamo FBX → skeleton JSON + render pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Modes:
-  Sequential (default):   renders in-process, no extra Blender startups.
-  Parallel:               pass --cam_workers and/or --frame_workers to
-                          spawn child Blender processes.
+    Modes:
+    Sequential:   renders in-process, no extra Blender startups.
 
-Sequential example:
-  blender --background --python render_pipeline.py -- \\
-      --fbx_path ./fbx/ --out_dir ./out/ --n_cam 4
+    Sequential example:
+    blender --background --python render_pipeline.py -- \\
+        --fbx_path ./fbx/ --out_dir ./out/ --n_cam 4
 
-Parallel example (4 camera workers × 2 frame workers = 8 concurrent):
-  blender --background --python render_pipeline.py -- \\
-      --fbx_path ./fbx/ --out_dir ./out/ --n_cam 4 \\
-      --cam_workers 4 --frame_workers 2
-""",
+    """,
     )
 
     # -- Input / output --
-    p.add_argument("--fbx_path",  type=str, default="./mixamo_fbx/",
+    p.add_argument("--fbx_path",  nargs="+", type=str, default="./mixamo_fbx/",
                    help="Single .fbx file or directory of .fbx files")
     p.add_argument("--out_dir",   type=str, default="./output/")
 
@@ -527,24 +440,19 @@ Parallel example (4 camera workers × 2 frame workers = 8 concurrent):
 
     # -- Appearance --
     p.add_argument("--char_color",  type=str, default=None)
-    p.add_argument("--img_height",  type=int, default=512)
-    p.add_argument("--img_width",   type=int, default=512)
+    p.add_argument("--img_height",  type=int, default=720)
+    p.add_argument("--img_width",   type=int, default=1280)
 
     # -- Render engine --
+    p.add_argument("--enable_gi", action="store_true", default=False,
+                   help="Enable global illumination (more expensive).")
     p.add_argument("--render_engine",  type=str, default="cycles",
                    choices=["eevee", "cycles"])
     p.add_argument("--render_samples", type=int, default=16)
     p.add_argument("--use_gpu",        action="store_true")
+    p.add_argument("--gpu_id",      type=str, default="0",)
     p.add_argument("--legacy_mode",    action="store_true")
 
-    # -- Parallel mode (omit these for sequential) --
-    p.add_argument("--cam_workers",   type=int, default=None,
-                   help="Number of concurrent camera workers.  "
-                        "Omit for sequential mode.")
-    p.add_argument("--frame_workers", type=int, default=None,
-                   help="Split each camera's frame range into this many "
-                        "chunks (one child Blender per chunk).  "
-                        "Omit for sequential mode.")
     p.add_argument("--blender_bin",   type=str, default=_DEFAULT_BLENDER,
                    help="Path to Blender binary (for parallel child processes)")
     p.add_argument("--dry_run",       action="store_true",
@@ -556,23 +464,22 @@ Parallel example (4 camera workers × 2 frame workers = 8 concurrent):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
 if __name__ == "__main__":
     args = parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
-    # Discover FBX files
-    if ".fbx" in args.fbx_path:
-        fbx_files = [args.fbx_path]
-    else:
+    # Discover FBX files if given a folder instead a list of files
+    print(args.fbx_path)
+    if os.path.isdir(args.fbx_path[0]):
         fbx_files = sorted(glob.glob(os.path.join(args.fbx_path, "*.fbx")))
+    else:
+        fbx_files = args.fbx_path
 
     if not fbx_files:
         print(f"[#] ERROR: no .fbx files found at {args.fbx_path}", flush=True)
         sys.exit(1)
 
-    is_parallel = (args.cam_workers is not None) or (args.frame_workers is not None)
-    mode = "parallel" if is_parallel else "sequential"
-    print(f"[#] Found {len(fbx_files)} FBX file(s)  ·  mode: {mode}", flush=True)
+    print(f"[#] Found {len(fbx_files)} FBX file(s)", flush=True)
 
     for fbx in fbx_files:
         process_fbx(args, fbx)

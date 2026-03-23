@@ -33,12 +33,9 @@ if __name__ == "__main__":
         img_width = f"--img_width {args.img_width}"
         img_height = f"--img_height {args.img_height}"
         blender_bin = f"--blender_bin \"{args.blender_bin}\""
-        cam_workers = f"--cam_workers {args.cam_workers}"
-        frame_workers = f"--frame_workers {args.frame_workers}"
-        render_settings = f"{n_cam} {follow_bone} {cam_height} {cam_radius} {img_width} {img_height} {blender_bin} {cam_workers} {frame_workers}"
+        render_settings = f"{n_cam} {follow_bone} {cam_height} {cam_radius} {img_width} {img_height} {blender_bin}"
 
-        # blender_cmd = f"{args.blender_path} -b --factory-startup -noaudio -P ./render_fbx.py -- {fbx} {out_dir} {render_settings}"
-        blender_cmd = f"python ./render_pipeline.py -- {fbx} {out_dir} {render_settings}"
+        blender_cmd = f"python ./blender_render.py -- {fbx} {out_dir} {render_settings}"
         blender_cmd += " --use_gpu" if args.use_gpu else ""
         print(blender_cmd)
         os.system(blender_cmd)

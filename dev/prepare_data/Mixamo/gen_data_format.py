@@ -85,10 +85,6 @@ if __name__ == "__main__":
                 df_render = pd.concat([df_render, pd.DataFrame([[vid_file, motion_file, prompt]], columns=['video', 'motion', 'prompt'])], ignore_index=True)
             
     df_render.to_csv(os.path.join(output_path, 'metadata.csv'), index=False)
-    # df_single_motion = df_render[df_render['motion'].str.contains('Walking')]
-    # df_single_motion.to_csv(os.path.join(output_path, 'metadata_single_motion.csv'), index=False)
-    # df_single_sample  = df_render[df_render['motion'].str.contains('Walking_cam-0_motion.npz')]
-    # df_single_sample.to_csv(os.path.join(output_path, 'metadata_single_sample.csv'), index=False)
     df_front_view = df_render[df_render['motion'].str.contains('cam-0')]
     df_front_view.to_csv(os.path.join(output_path, 'metadata_front-view.csv'), index=False)
     

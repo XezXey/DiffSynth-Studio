@@ -7,10 +7,8 @@ Call ``configure_render_engine`` once after you have set up the scene
 
 import bpy
 
-
 # GPU backend preference order – first one that activates successfully wins.
 _GPU_BACKENDS = ["OPTIX", "CUDA", "HIP", "METAL", "ONEAPI"]
-
 
 def _try_enable_gpu_cycles(scene) -> bool:
     """
@@ -20,6 +18,10 @@ def _try_enable_gpu_cycles(scene) -> bool:
     try:
         scene.cycles.device = "GPU"
         prefs = bpy.context.preferences.addons["cycles"].preferences
+        prefs.refresh_devices()
+        print("[#] Available compute devices:")
+        for d in prefs.devices:
+            print(d.name, d.type, d.use)
 
         for backend in _GPU_BACKENDS:
             try:
@@ -55,6 +57,7 @@ def configure_render_engine(
     samples: int = 16,
     use_gpu: bool = False,
     legacy_mode: bool = False,
+    enable_gi: bool = False,
 ):
     """
     Configure ``scene.render.engine``, samples, and device.
@@ -72,12 +75,15 @@ def configure_render_engine(
     legacy_mode:
         If True, leave all render settings untouched (useful for debugging
         or comparing against default Blender behaviour).
+    enable_gi:
+        If True, enable global illumination (more expensive).
     """
     if legacy_mode:
         print("[#] Legacy mode: render settings unchanged.", flush=True)
         return
 
     if engine.lower() == "cycles":
+        print("[#] Configuring Cycles render engine...", flush=True)
         print(
             f"[#] Cycles engine · {samples} samples · "
             f"{'GPU' if use_gpu else 'CPU'}",
@@ -85,22 +91,24 @@ def configure_render_engine(
         )
         scene.render.engine = "CYCLES"
         scene.cycles.samples = samples
-        scene.cycles.max_bounces          = 1   # total
-        scene.cycles.diffuse_bounces      = 0   # no colour bleeding / GI
-        scene.cycles.glossy_bounces       = 1   # keep one for basic reflections
-        scene.cycles.transmission_bounces = 0
-        scene.cycles.volume_bounces       = 0
-        scene.cycles.transparent_max_bounces = 1
-        # ── Clamping — crush any residual bright indirect samples ────────────────────
-        scene.cycles.sample_clamp_indirect = 0.1   # 0 = off, lower = more suppression
-        scene.cycles.sample_clamp_direct   = 0.0   # leave direct light unclamped
-        # ── Caustics — off ───────────────────────────────────────────────────────────
-        scene.cycles.caustics_reflective = False
-        scene.cycles.caustics_refractive = False
-        scene.cycles.blur_glossy         = 1.0    # filter glossy noise
+        if not enable_gi:
+            scene.cycles.max_bounces          = 0   # total
+            scene.cycles.diffuse_bounces      = 0   # no colour bleeding / GI
+            scene.cycles.glossy_bounces       = 0   # keep one for basic reflections
+            scene.cycles.transmission_bounces = 0
+            scene.cycles.volume_bounces       = 0
+            scene.cycles.transparent_max_bounces = 0
+            # ── Clamping — crush any residual bright indirect samples ────────────────────
+            scene.cycles.sample_clamp_indirect = 0   # 0 = off, lower = more suppression
+            scene.cycles.sample_clamp_direct   = 0   # leave direct light unclamped
+            # ── Caustics — off ───────────────────────────────────────────────────────────
+            scene.cycles.caustics_reflective = False
+            scene.cycles.caustics_refractive = False
+            # Tile size: larger tiles are usually better for GPU, smaller for CPU (but this is scene-dependent)
 
         if use_gpu:
             _try_enable_gpu_cycles(scene)
+            print(f"[#] Successfully enabled GPU rendering for Cycles (Status = {bpy.context.scene.cycles.device}).", flush=True)
         else:
             scene.cycles.device = "CPU"
             print("[#] CPU rendering.", flush=True)
@@ -108,7 +116,15 @@ def configure_render_engine(
     else:  # eevee (default for older Blender, EEVEE-Next in 4.x)
         scene.render.engine = "BLENDER_EEVEE"
         print("[#] EEVEE engine.", flush=True)
-
+        
+    # scene.cycles.use_denoising = True
+    scene.cycles.denoiser = "OPENIMAGEDENOISE"
+    scene.cycles.denoising_use_gpu = use_gpu
+    # scene.cycles.use_denoising = False  # for now, to isolate render quality variables
+    print("Device:", scene.cycles.device)
+    print("Samples:", scene.cycles.samples)
+    print("Denoising:", scene.cycles.use_denoising)
+    print("Denoiser:", scene.cycles.denoiser)
     # General quality / speed tweaks
     scene.render.use_simplify = True
     scene.render.simplify_subdivision = 0
