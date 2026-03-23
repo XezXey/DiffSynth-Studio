@@ -85,6 +85,19 @@ def configure_render_engine(
         )
         scene.render.engine = "CYCLES"
         scene.cycles.samples = samples
+        scene.cycles.max_bounces          = 1   # total
+        scene.cycles.diffuse_bounces      = 0   # no colour bleeding / GI
+        scene.cycles.glossy_bounces       = 1   # keep one for basic reflections
+        scene.cycles.transmission_bounces = 0
+        scene.cycles.volume_bounces       = 0
+        scene.cycles.transparent_max_bounces = 1
+        # ── Clamping — crush any residual bright indirect samples ────────────────────
+        scene.cycles.sample_clamp_indirect = 0.1   # 0 = off, lower = more suppression
+        scene.cycles.sample_clamp_direct   = 0.0   # leave direct light unclamped
+        # ── Caustics — off ───────────────────────────────────────────────────────────
+        scene.cycles.caustics_reflective = False
+        scene.cycles.caustics_refractive = False
+        scene.cycles.blur_glossy         = 1.0    # filter glossy noise
 
         if use_gpu:
             _try_enable_gpu_cycles(scene)
