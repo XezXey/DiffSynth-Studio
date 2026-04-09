@@ -83,7 +83,11 @@ class TrainOnDiTFeatures(L.LightningModule):
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(), transient=True, console=_console) as progress:
             task = progress.add_task("Validating - ", total=len(val_sequences))
             batch_task = progress.add_task(" Chunk-id", total=None, visible=False)
+        # if True:
             for seq in val_sequences: # iterate over character-motion sequences
+                if len(seq["paths"]) == 1:
+                    continue    # skip single-frame sequences since they don't have motion and won't contribute to loss/accuracy
+                # print(f"Validating - {seq['character']}:{seq['motion_name']} (frames: {len(seq['paths'])})")
                 progress.update(task, description=f"Validating - [cyan]{seq['character']}:{seq['motion_name']}[/]")
                 ds = DitFeaturesDataset(
                     seq["paths"], preferred_dit_block_id=self.preferred_dit_block_id
@@ -222,9 +226,11 @@ class TrainOnDiTFeatures(L.LightningModule):
         org_w = cx * 2.0 + 1
         j2d_gt[..., 0] = j2d_gt[..., 0] / (org_w - 1)     # normalize to [0,1]
         j2d_gt[..., 1] = j2d_gt[..., 1] / (org_h - 1)   # normalize to [0,1]
+        # print(inputs.keys())
+        # print(j3d_gt.shape, j2d_gt.shape)
         mask = th.logical_and(j2d_gt[..., :2] >= 0.0, j2d_gt[..., :2] <= 1.0).all(dim=-1)   # .all(dim=-1) to ensure both u and v are valid (squeezed last dimension)
-        assert j3d_gt.shape[0] == j2d_gt.shape[0], "Number of frames mismatch between 3D and 2D joints."
-        assert j3d_gt.shape[1] == j2d_gt.shape[1], "Number of joints mismatch between 3D and 2D joints."
+        assert j3d_gt.shape[0] == j2d_gt.shape[0], f"Motion: {inputs.get('motion_name', 'Unknown')} => Number of frames mismatch between 3D ({j3d_gt.shape[0]}) and 2D joints ({j2d_gt.shape[0]})."
+        assert j3d_gt.shape[1] == j2d_gt.shape[1], f"Motion: {inputs.get('motion_name', 'Unknown')} => Number of joints mismatch between 3D ({j3d_gt.shape[1]}) and 2D joints ({j2d_gt.shape[1]})."
         pred_dict["motion_gt_3d"] = j3d_gt
         pred_dict["motion_gt_2d"] = j2d_gt
         

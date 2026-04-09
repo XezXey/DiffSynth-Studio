@@ -112,6 +112,8 @@ def _build_command(motion_file: str, char_output_dir: str, gpu_id: str, args) ->
     if args.run_projection:   cmd += " --run_projection"
     if args.only_body_joints: cmd += " --only_body_joints"
     if args.skip_plot_map:    cmd += " --skip_plot_map"
+    print(cmd)
+    exit()
     return cmd
 
 

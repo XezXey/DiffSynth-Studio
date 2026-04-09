@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Render Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0d0f14;
+      --surface:  #151821;
+      --surface2: #1c2030;
+      --border:   #252a3a;
+      --accent:   #4fffb0;
+      --accent2:  #38b8ff;
+      --warn:     #ffb547;
+      --danger:   #ff5370;
+      --text:     #e2e8f8;
+      --muted:    #6b7699;
+      --mono:     'Space Mono', monospace;
+      --sans:     'DM Sans', sans-serif;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 28px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0;
+      background: rgba(13,15,20,.95);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+    .logo {
+      font-family: var(--mono); font-size: 13px; letter-spacing: .08em;
+      color: var(--accent); display: flex; align-items: center; gap: 10px;
+    }
+    .logo-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+    .header-right {
+      display: flex; align-items: center; gap: 20px;
+      font-size: 12px; color: var(--muted); font-family: var(--mono);
+    }
+    #refresh-countdown { color: var(--accent2); }
+    .root-path { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Summary ── */
+    .summary {
+      display: flex; gap: 24px; padding: 18px 28px;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat-val { font-size: 24px; font-family: var(--mono); line-height: 1; }
+    .stat-val.green  { color: var(--accent); }
+    .stat-val.yellow { color: var(--warn); }
+    .stat-val.blue   { color: var(--accent2); }
+    .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      padding: 14px 28px; display: flex; gap: 10px;
+      flex-wrap: wrap; align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .search-wrap { position: relative; flex: 1; min-width: 180px; max-width: 360px; }
+    .search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+    input[type=search], select {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      border-radius: 7px; padding: 7px 10px 7px 32px; font-family: var(--sans);
+      font-size: 13px; width: 100%; outline: none; transition: border-color .15s;
+    }
+    input[type=search]:focus, select:focus { border-color: var(--accent2); }
+    select { padding-left: 10px; cursor: pointer; }
+
+    /* View toggle */
+    .view-toggle { display: flex; gap: 4px; margin-left: auto; }
+    .view-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 6px; padding: 6px 10px;
+      cursor: pointer; font-size: 14px; transition: all .15s;
+    }
+    .view-btn.active { background: var(--surface2); border-color: var(--accent2); color: var(--accent2); }
+
+    /* ── GRID VIEW ── */
+    .grid-wrap { padding: 20px 28px 40px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color .15s, transform .15s, box-shadow .15s;
+      display: flex; flex-direction: column;
+    }
+    .card:hover {
+      border-color: var(--accent2);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+
+    /* GIF / preview area */
+    .card-preview {
+      width: 100%; aspect-ratio: 16/9;
+      background: #080a0e;
+      position: relative;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card-preview img {
+      width: 100%; height: 100%; object-fit: cover;
+      display: block;
+    }
+    .card-preview .preview-placeholder {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      color: var(--muted); font-size: 11px; font-family: var(--mono);
+    }
+    .preview-spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border); border-top-color: var(--accent2);
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Progress bar over preview */
+    .card-progress {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 3px; background: rgba(0,0,0,.4);
+    }
+    .card-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      transition: width .5s;
+    }
+    .card-progress-fill.done { background: var(--accent); }
+
+    /* Status badge on preview */
+    .card-badge {
+      position: absolute; top: 8px; right: 8px;
+      padding: 2px 7px; border-radius: 4px;
+      font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+    }
+    .badge-done    { background: rgba(79,255,176,.18); color: var(--accent); border: 1px solid rgba(79,255,176,.3); }
+    .badge-active  { background: rgba(56,184,255,.18); color: var(--accent2); border: 1px solid rgba(56,184,255,.3); }
+    .badge-pending { background: rgba(107,118,153,.15); color: var(--muted);  border: 1px solid rgba(107,118,153,.2); }
+
+    /* Card body */
+    .card-body { padding: 10px 12px 12px; flex: 1; }
+    .card-char  { font-size: 10px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+    .card-motion { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+    .card-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; font-family: var(--mono); color: var(--muted);
+    }
+    .card-pct { color: var(--text); font-size: 12px; }
+
+    /* ── TABLE VIEW ── */
+    .table-wrap { padding: 0 28px 40px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      text-align: left; padding: 10px 14px;
+      font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted);
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+    tbody tr:hover { background: var(--surface); }
+    tbody td { padding: 10px 14px; vertical-align: middle; }
+    .mono { font-family: var(--mono); font-size: 12px; }
+    .chip {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    }
+    .chip-done    { background: rgba(79,255,176,.12); color: var(--accent); }
+    .chip-active  { background: rgba(56,184,255,.12); color: var(--accent2); }
+    .chip-pending { background: rgba(107,118,153,.12); color: var(--muted); }
+    .bar-wrap { background: var(--surface2); border-radius: 4px; height: 6px; width: 120px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width .4s; }
+    .bar-fill.done   { background: var(--accent); }
+    .bar-fill.active { background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+    .bar-fill.zero   { background: var(--muted); }
+    .pct-text { font-family: var(--mono); font-size: 11px; margin-top: 3px; color: var(--muted); }
+
+    /* Thumbnail in table */
+    .table-thumb {
+      width: 64px; height: 36px; object-fit: cover;
+      border-radius: 4px; background: var(--surface2);
+      display: block;
+    }
+    .thumb-placeholder {
+      width: 64px; height: 36px; border-radius: 4px;
+      background: var(--surface2); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; color: var(--muted); font-family: var(--mono);
+    }
+
+    /* ── Empty ── */
+    .empty { text-align: center; padding: 80px 32px; color: var(--muted); }
+    .empty h2 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
+    .empty code { font-family: var(--mono); font-size: 12px; background: var(--surface); padding: 2px 6px; border-radius: 4px; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 18px;
+      font-size: 12px; font-family: var(--mono); color: var(--accent);
+      opacity: 0; transform: translateY(8px);
+      transition: opacity .3s, transform .3s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>RENDER MONITOR</div>
+  <div class="header-right">
+    <span class="root-path" title="{{ render_root }}">{{ render_root }}</span>
+    <span>refresh in <span id="refresh-countdown">{{ scan_interval }}</span>s</span>
+  </div>
+</header>
+
+{% set total      = jobs | length %}
+{% set done_count = jobs | selectattr('done') | list | length %}
+{% set total_exp  = jobs | sum(attribute='total_expected') %}
+{% set total_ren  = jobs | sum(attribute='rendered_count') %}
+
+<div class="summary">
+  <div class="stat"><span class="stat-val blue">{{ total }}</span><span class="stat-label">Total Jobs</span></div>
+  <div class="stat"><span class="stat-val green">{{ done_count }}</span><span class="stat-label">Completed</span></div>
+  <div class="stat"><span class="stat-val yellow">{{ total - done_count }}</span><span class="stat-label">Pending / Active</span></div>
+  <div class="stat"><span class="stat-val">{{ total_ren }} / {{ total_exp }}</span><span class="stat-label">Frames Rendered</span></div>
+</div>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="search" id="search" placeholder="Filter by character, motion, camera…" />
+  </div>
+  <select id="filter-status">
+    <option value="">All statuses</option>
+    <option value="done">Completed</option>
+    <option value="active">In progress</option>
+    <option value="pending">Not started</option>
+  </select>
+
+  <div class="view-toggle">
+    <button class="view-btn active" id="btn-grid" title="Grid view">⊞</button>
+    <button class="view-btn"        id="btn-table" title="Table view">☰</button>
+  </div>
+</div>
+
+{% if jobs %}
+
+<!-- ══ GRID VIEW ══════════════════════════════════════════════════════════ -->
+<div class="grid-wrap" id="view-grid">
+  <div class="grid" id="grid-container">
+  {% for j in jobs %}
+    {% if j.done %}{% set status='done' %}
+    {% elif j.rendered_count > 0 %}{% set status='active' %}
+    {% else %}{% set status='pending' %}{% endif %}
+
+    <div class="card"
+         data-search="{{ j.char_name }} {{ j.motion_name }} {{ j.cam_id }}"
+         data-status="{{ status }}"
+         data-job-id="{{ j.job_id }}"
+         onclick="window.location='/job/{{ j.job_id | urlencode }}'">
+
+      <div class="card-preview" id="preview-{{ loop.index0 }}">
+        <!-- GIF injected by JS once ready -->
+        <div class="preview-placeholder" id="ph-{{ loop.index0 }}">
+          {% if j.rendered_count > 0 %}
+            <div class="preview-spinner"></div>
+            <span>generating…</span>
+          {% else %}
+            <span>no frames</span>
+          {% endif %}
+        </div>
+
+        <div class="card-progress">
+          <div class="card-progress-fill {% if j.done %}done{% endif %}"
+               style="width:{{ j.pct if j.pct is not none else 0 }}%"
+               id="cprog-{{ j.job_id | replace('|','_') }}"></div>
+        </div>
+
+        <span class="card-badge badge-{{ status }}">{{ status.upper() }}</span>
+      </div>
+
+      <div class="card-body">
+        <div class="card-char">{{ j.char_name }} · cam {{ j.cam_id }}</div>
+        <div class="card-motion" title="{{ j.motion_name }}">{{ j.motion_name }}</div>
+        <div class="card-meta">
+          <span>{{ j.rendered_count }} / {{ j.total_expected if j.total_expected is not none else '?' }}</span>
+          <span class="card-pct">{{ j.pct if j.pct is not none else '?' }}%</span>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+</div>
+
+<!-- ══ TABLE VIEW ═════════════════════════════════════════════════════════ -->
+<div class="table-wrap hidden" id="view-table">
+  <table id="jobs-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Status</th>
+        <th>Character</th>
+        <th>Motion</th>
+        <th>Camera</th>
+        <th>Progress</th>
+        <th>Rendered</th>
+        <th>Expected</th>
+        <th>Remaining</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for j in jobs %}
+      {% if j.done %}{% set status='done' %}
+      {% elif j.rendered_count > 0 %}{% set status='active' %}
+      {% else %}{% set status='pending' %}{% endif %}
+      <tr onclick="window.location='/job/{{ j.job_id | urlencode }}'"
+          data-search="{{ j.char_name }} {{ j.motion_name }} {{ j.cam_id }}"
+          data-status="{{ status }}"
+          data-job-id="{{ j.job_id }}">
+        <td>
+          <div class="thumb-placeholder" id="tthumb-{{ loop.index0 }}">GIF</div>
+        </td>
+        <td><span class="chip chip-{{ status }}">{{ status.upper() }}</span></td>
+        <td>{{ j.char_name }}</td>
+        <td class="mono">{{ j.motion_name }}</td>
+        <td class="mono">{{ j.cam_id }}</td>
+        <td>
+          {% if j.pct is not none %}
+            <div class="bar-wrap"><div class="bar-fill {% if j.done %}done{% elif j.rendered_count > 0 %}active{% else %}zero{% endif %}" style="width:{{ j.pct }}%"></div></div>
+            <div class="pct-text">{{ j.pct }}%</div>
+          {% else %}—{% endif %}
+        </td>
+        <td class="mono">{{ j.rendered_count }}</td>
+        <td class="mono">{{ j.total_expected if j.total_expected is not none else '?' }}</td>
+        <td class="mono">{{ j.remaining if j.remaining is not none else '?' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="empty">
+  <h2>No render jobs found</h2>
+  <p>Make sure the root directory exists and has the expected structure.<br>
+  Current root: <code>{{ render_root }}</code></p>
+</div>
+{% endif %}
+
+<div id="toast">↻ Refreshed</div>
+
+<script>
+const SCAN_INTERVAL = {{ scan_interval }};
+
+// ── View toggle ───────────────────────────────────────────────────────────────
+const viewGrid  = document.getElementById('view-grid');
+const viewTable = document.getElementById('view-table');
+const btnGrid   = document.getElementById('btn-grid');
+const btnTable  = document.getElementById('btn-table');
+let currentView = localStorage.getItem('rm_view') || 'grid';
+
+function setView(v) {
+  currentView = v;
+  localStorage.setItem('rm_view', v);
+  viewGrid.classList.toggle('hidden', v !== 'grid');
+  viewTable.classList.toggle('hidden', v !== 'table');
+  btnGrid.classList.toggle('active', v === 'grid');
+  btnTable.classList.toggle('active', v === 'table');
+}
+btnGrid.addEventListener('click',  () => setView('grid'));
+btnTable.addEventListener('click', () => setView('table'));
+setView(currentView);
+
+// ── Filter & search ───────────────────────────────────────────────────────────
+const searchEl  = document.getElementById('search');
+const filterEl  = document.getElementById('filter-status');
+const cards     = Array.from(document.querySelectorAll('.card'));
+const tableRows = Array.from(document.querySelectorAll('#jobs-table tbody tr'));
+
+function applyFilters() {
+  const q = searchEl.value.toLowerCase();
+  const s = filterEl.value;
+  [...cards, ...tableRows].forEach(el => {
+    const matchQ = !q || el.dataset.search.toLowerCase().includes(q);
+    const matchS = !s || el.dataset.status === s;
+    el.style.display = (matchQ && matchS) ? '' : 'none';
+  });
+}
+searchEl.addEventListener('input', applyFilters);
+filterEl.addEventListener('change', applyFilters);
+
+// ── GIF polling ───────────────────────────────────────────────────────────────
+// Build map: job_id -> { cardIdx, placeholderEl }
+const jobMeta = {};
+{% for j in jobs %}
+  jobMeta[{{ j.job_id | tojson }}] = {
+    cardIdx: {{ loop.index0 }},
+    hasFrames: {{ (j.rendered_count > 0) | tojson }},
+  };
+{% endfor %}
+
+function injectGif(jobId, gifUrl, cardIdx) {
+  // Card preview
+  const ph = document.getElementById(`ph-${cardIdx}`);
+  const preview = document.getElementById(`preview-${cardIdx}`);
+  if (ph && preview && !preview.querySelector('img')) {
+    const img = document.createElement('img');
+    img.src = gifUrl;
+    img.alt = 'preview';
+    img.style.opacity = 0;
+    img.style.transition = 'opacity .4s';
+    img.onload = () => { img.style.opacity = 1; };
+    ph.replaceWith(img);
+  }
+
+  // Table thumbnail
+  const tthumb = document.getElementById(`tthumb-${cardIdx}`);
+  if (tthumb && tthumb.tagName !== 'IMG') {
+    const img = document.createElement('img');
+    img.src = gifUrl;
+    img.className = 'table-thumb';
+    img.alt = '';
+    tthumb.replaceWith(img);
+  }
+}
+
+let gifsDone = new Set();
+
+function pollGifs() {
+  // Only poll jobs that still need a GIF
+  const pending = Object.entries(jobMeta).filter(([id, m]) =>
+    m.hasFrames && !gifsDone.has(id)
+  );
+  if (pending.length === 0) return;
+
+  fetch('/api/gif_status')
+    .then(r => r.json())
+    .then(status => {
+      for (const [jobId, meta] of pending) {
+        const s = status[jobId];
+        if (s && s.ready && s.url) {
+          injectGif(jobId, s.url, meta.cardIdx);
+          gifsDone.add(jobId);
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+// Poll for GIFs every 3 seconds until all are loaded
+const gifPollTimer = setInterval(() => {
+  pollGifs();
+  const total = Object.values(jobMeta).filter(m => m.hasFrames).length;
+  if (gifsDone.size >= total) clearInterval(gifPollTimer);
+}, 3000);
+
+// First poll immediately
+pollGifs();
+
+// ── Progress auto-refresh ─────────────────────────────────────────────────────
+let countdown = SCAN_INTERVAL;
+const countEl = document.getElementById('refresh-countdown');
+const toast   = document.getElementById('toast');
+
+function patchProgress(jobs) {
+  jobs.forEach(j => {
+    const jidSafe = j.job_id.replace(/\|/g, '_');
+    // Card progress bar
+    const cprog = document.getElementById(`cprog-${jidSafe}`);
+    if (cprog && j.pct !== null) cprog.style.width = j.pct + '%';
+
+    // Table row
+    const row = document.querySelector(`tr[data-job-id="${CSS.escape(j.job_id)}"]`);
+    if (!row) return;
+    const status = j.done ? 'done' : j.rendered_count > 0 ? 'active' : 'pending';
+    row.dataset.status = status;
+    const chip = row.querySelector('.chip');
+    if (chip) { chip.className = `chip chip-${status}`; chip.textContent = status.toUpperCase(); }
+    const fill = row.querySelector('.bar-fill');
+    if (fill && j.pct !== null) { fill.style.width = j.pct + '%'; fill.className = `bar-fill ${j.done ? 'done' : j.rendered_count > 0 ? 'active' : 'zero'}`; }
+    const tds = row.querySelectorAll('td');
+    if (tds[6]) tds[6].textContent = j.rendered_count;
+    if (tds[7]) tds[7].textContent = j.total_expected ?? '?';
+    if (tds[8]) tds[8].textContent = j.remaining ?? '?';
+  });
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+setInterval(() => {
+  countdown--;
+  countEl.textContent = countdown;
+  if (countdown <= 0) {
+    countdown = SCAN_INTERVAL;
+    fetch('/api/jobs')
+      .then(r => r.json())
+      .then(data => {
+        patchProgress(data.jobs);
+        pollGifs();  // also re-check GIFs after progress update
+      })
+      .catch(() => {});
+  }
+}, 1000);
+</script>
+</body>
+</html>

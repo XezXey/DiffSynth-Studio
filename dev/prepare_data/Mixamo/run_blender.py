@@ -47,4 +47,6 @@ if __name__ == "__main__":
         projection_cmd = f"python ./blender_projection.py --path \"{args.out_dir}\""
         projection_cmd += " --only_body_joints" if args.only_body_joints else ""
         projection_cmd += " --skip_plot_map" if args.skip_plot_map else ""
+        print(projection_cmd)
         os.system(projection_cmd)
+        print("#" * 100)
