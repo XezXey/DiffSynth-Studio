@@ -125,6 +125,13 @@ def _encode_images(images: list, quality: int = 80) -> list:
     return out
 
 # ── Panel builders ────────────────────────────────────────────────────────────
+
+def _clean_joints(joints: np.ndarray, max_val: float = 1000.0) -> list:
+    """Replace NaNs/Infs and clip coordinate values to avoid Three.js bounding-box issues."""
+    j = np.asarray(joints, dtype=np.float32)
+    j = np.nan_to_num(j, nan=0.0, posinf=max_val, neginf=-max_val)
+    return np.clip(j, -max_val, max_val).tolist()
+
 def panel_3d(
     pred: Optional[np.ndarray] = None,
     gt:   Optional[np.ndarray] = None,
@@ -155,19 +162,20 @@ def panel_3d(
     """
     if skeletons is not None:
         # New simplified API - use directly
-        skels = [{"joints": np.asarray(s["joints"]).tolist(),
+        skels = [{"joints": _clean_joints(s["joints"]),
                   "color": s.get("color", PRED_COLOR),
-                  "label": s.get("label", "")} for s in skeletons]
+                  "label": s.get("label", ""),
+                  "path": s.get("path", "")} for s in skeletons]
     else:
         # Legacy API
         if pred is None:
             raise ValueError("panel_3d: supply either 'pred' (legacy) or 'skeletons' (multi-model API).")
-        skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
+        skels = [{"joints": _clean_joints(pred), "color": pred_color, "label": "pred"}]
         if gt is not None:
-            skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
+            skels.append({"joints": _clean_joints(gt), "color": gt_color, "label": "gt"})
         if extra_skeletons:
             for s in extra_skeletons:
-                skels.append({"joints": np.asarray(s["joints"]).tolist(),
+                skels.append({"joints": _clean_joints(s["joints"]),
                               "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
     out: dict = {"type": "3d", "skeletons": skels, "label": label, "coord": coord}
     if edges is not None:
@@ -195,18 +203,19 @@ def panel_2d(
                 Use this for multi-model comparison (overrides pred/gt)
     """
     if skeletons is not None:
-        skels = [{"joints": np.asarray(s["joints"]).tolist(),
+        skels = [{"joints": _clean_joints(s["joints"]),
                   "color": s.get("color", PRED_COLOR),
-                  "label": s.get("label", "")} for s in skeletons]
+                  "label": s.get("label", ""),
+                  "path": s.get("path", "")} for s in skeletons]
     else:
         if pred is None:
             raise ValueError("panel_2d: supply either 'pred' (legacy) or 'skeletons' (multi-model API).")
-        skels = [{"joints": np.asarray(pred).tolist(), "color": pred_color, "label": "pred"}]
+        skels = [{"joints": _clean_joints(pred), "color": pred_color, "label": "pred"}]
         if gt is not None:
-            skels.append({"joints": np.asarray(gt).tolist(), "color": gt_color, "label": "gt"})
+            skels.append({"joints": _clean_joints(gt), "color": gt_color, "label": "gt"})
         if extra_skeletons:
             for s in extra_skeletons:
-                skels.append({"joints": np.asarray(s["joints"]).tolist(),
+                skels.append({"joints": _clean_joints(s["joints"]),
                               "color": s.get("color","#aaaaaa"), "label": s.get("label","")})
     out: dict = {"type": "2d", "skeletons": skels, "label": label}
     if edges is not None:
@@ -249,15 +258,16 @@ def panel_image_overlay(
     """
     encoded = _encode_images(images, quality=image_quality)
     if skeletons is not None:
-        skels = [{"joints": np.asarray(s["joints"]).tolist(),
+        skels = [{"joints": _clean_joints(s["joints"]),
                   "color": s.get("color", PRED_COLOR),
-                  "label": s.get("label", "")} for s in skeletons]
+                  "label": s.get("label", ""),
+                  "path": s.get("path", "")} for s in skeletons]
     else:
         skels = []
         if joints is not None:
-            skels.append({"joints": np.asarray(joints).tolist(), "color": joint_color, "label": "pred"})
+            skels.append({"joints": _clean_joints(joints), "color": joint_color, "label": "pred"})
         if joints_gt is not None:
-            skels.append({"joints": np.asarray(joints_gt).tolist(), "color": gt_color, "label": "gt"})
+            skels.append({"joints": _clean_joints(joints_gt), "color": gt_color, "label": "gt"})
     out: dict = {"type": "image_overlay", "images": encoded, "skeletons": skels,
                  "label": label, "joints_space": joints_space}
     if edges is not None:
@@ -269,7 +279,7 @@ def panel_image_overlay(
 _CSS = """\
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap');
 :root {
-  --bg:#07070d; --surface:#0d0d1a; --border:rgba(255,255,255,0.07);
+  --bg:#1e1e24; --surface:#282836; --border:rgba(255,255,255,0.1);
   --accent:#4ECDC4; --accent2:#FF6B6B; --text:#e0e0ed; --muted:#525272;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -451,30 +461,30 @@ function buildFloor(scene){
   var P=0.5,N=Math.ceil(10/P);
   var c2=document.createElement('canvas').getContext('2d');
   c2.canvas.width=c2.canvas.height=2;
-  c2.fillStyle='#2e2e4a';c2.fillRect(0,0,2,2);
-  c2.fillStyle='#1e1e34';c2.fillRect(0,1,1,1);
+  c2.fillStyle='#a6a6a6';c2.fillRect(0,0,2,2);
+  c2.fillStyle='#6c6c6c';c2.fillRect(0,1,1,1);
   var tex=new THREE.CanvasTexture(c2.canvas); tex.magFilter=THREE.NearestFilter;
   var g=new THREE.PlaneGeometry(N*P,N*P,N,N).toNonIndexed(); g.rotateX(-Math.PI/2);
   var uv=g.attributes.uv,cnt=0,fl=0;
   for(var i=0;i<uv.count;i++){if(i>0&&i%6===0){cnt++;if(cnt%N===0)fl=1-fl;}uv.setXY(i,(cnt+fl)%2,(cnt+fl)%2);}
-  var mat=new THREE.MeshPhongMaterial({color:0xffffff,map:tex,opacity:0.85,transparent:true});
+  var mat=new THREE.MeshPhongMaterial({color:0xffffff,map:tex,opacity:0.8,transparent:true});
   var mesh=new THREE.Mesh(g,mat); mesh.receiveShadow=true; scene.add(mesh);
   if(THREE.Reflector){
     var mg=new THREE.PlaneGeometry(N*P,N*P);
-    var mir=new THREE.Reflector(mg,{clipBias:0.003,textureWidth:512,textureHeight:512,color:0x222244});
+    var mir=new THREE.Reflector(mg,{clipBias:0.003,textureWidth:512,textureHeight:512,});
     mir.rotateX(-Math.PI/2); mir.position.y=-0.001; scene.add(mir);
   }
 }
 
 // ── Lights (matching main.js) ─────────────────────────────────────────────────
 function buildLights(scene){
-  scene.add(new THREE.AmbientLight(0xffffff,0.45));
-  var d=new THREE.DirectionalLight(0xffffff,0.9); d.position.set(2,4,3); d.castShadow=true;
+  scene.add(new THREE.AmbientLight(0xffffff,0.4));
+  var d=new THREE.DirectionalLight(0xffffff,0.8); d.position.set(2,4,3); d.castShadow=true;
   d.shadow.radius=1.5; d.shadow.blurSamples=12; d.shadow.bias=-0.002;
   d.shadow.mapSize.width=d.shadow.mapSize.height=1024;
   var sc=d.shadow.camera; sc.left=sc.bottom=-6; sc.right=sc.top=6; sc.near=0.5; sc.far=30;
   scene.add(d);
-  var pt=new THREE.PointLight(0xffffff,0.3); pt.position.set(4,8,4); scene.add(pt);
+  var pt=new THREE.PointLight(0xffffff,0.3); pt.position.set(4,8,4); pt.castShadow=false; scene.add(pt);
 }
 
 // ── 2-D drawing helper ────────────────────────────────────────────────────────
@@ -502,7 +512,7 @@ function init3DPanel(cell,pd){
   var rdr=new THREE.WebGLRenderer({antialias:true});
   rdr.setPixelRatio(Math.min(devicePixelRatio,2));
   rdr.setSize(W,H); rdr.shadowMap.enabled=true; rdr.shadowMap.type=THREE.VSMShadowMap;
-  rdr.setClearColor(0x1a1a2e); cell.appendChild(rdr.domElement);
+  rdr.setClearColor(0xc0c0c0); cell.appendChild(rdr.domElement);
   var scene=new THREE.Scene();
   var cam=new THREE.PerspectiveCamera(50,W/H,0.01,200); cam.position.set(0,1.6,3.5);
   var orb=new THREE.OrbitControls(cam,rdr.domElement);
@@ -525,18 +535,19 @@ function init3DPanel(cell,pd){
     var jm=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.5});
     var jg=new THREE.SphereGeometry(0.022,10,10);
     var jts=[];
-    for(var i=0;i<J;i++){var m=new THREE.Mesh(jg,jm);m.castShadow=true;scene.add(m);jts.push(m);}
-    var bm=new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.8});
+    for(var i=0;i<J;i++){var m=new THREE.Mesh(jg,jm);m.castShadow=true;m.receiveShadow=true;scene.add(m);jts.push(m);}
+    var bm=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.5});
+    var cg=new THREE.CylinderGeometry(0.008,0.008,1,8);
+    cg.rotateX(Math.PI/2); cg.translate(0,0,0.5);
     var bns=edges.map(function(){
-      var g=new THREE.BufferGeometry();
-      g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
-      var l=new THREE.Line(g,bm); scene.add(l); return l;
+      var l=new THREE.Mesh(cg,bm); l.castShadow=true; l.receiveShadow=true; scene.add(l); return l;
     });
     return {jts:jts,bns:bns,normed:sk.normed,visible:true};
   });
   function loop(){requestAnimationFrame(loop);orb.update();rdr.render(scene,cam);}
   loop();
   var spread3d=0;
+  var _v0=new THREE.Vector3(), _v1=new THREE.Vector3();
   function setFrame(f){
     var ctr3=(objs.length-1)/2;
     for(var oi=0;oi<objs.length;oi++){
@@ -548,10 +559,12 @@ function init3DPanel(cell,pd){
         o.jts[j].visible=vis;
       }
       for(var e=0;e<edges.length;e++){
-        var ab=edges[e],pos=o.bns[e].geometry.attributes.position;
-        pos.setXYZ(0,pts[ab[0]][0]+xOff,pts[ab[0]][1],pts[ab[0]][2]);
-        pos.setXYZ(1,pts[ab[1]][0]+xOff,pts[ab[1]][1],pts[ab[1]][2]);
-        pos.needsUpdate=true;
+        var ab=edges[e];
+        _v0.set(pts[ab[0]][0]+xOff,pts[ab[0]][1],pts[ab[0]][2]);
+        _v1.set(pts[ab[1]][0]+xOff,pts[ab[1]][1],pts[ab[1]][2]);
+        o.bns[e].position.copy(_v0);
+        o.bns[e].lookAt(_v1);
+        o.bns[e].scale.set(1, 1, _v0.distanceTo(_v1));
         o.bns[e].visible=vis;
       }
     }
@@ -561,7 +574,7 @@ function init3DPanel(cell,pd){
     if(!objs[idx])return;
     var c=new THREE.Color(col);
     for(var _j=0;_j<objs[idx].jts.length;_j++){objs[idx].jts[_j].material.color.set(c);objs[idx].jts[_j].material.emissive.set(c);}
-    for(var _b=0;_b<objs[idx].bns.length;_b++){objs[idx].bns[_b].material.color.set(c);}
+    for(var _b=0;_b<objs[idx].bns.length;_b++){objs[idx].bns[_b].material.color.set(c);objs[idx].bns[_b].material.emissive.set(c);}
     objs[idx].color=col;
   }
   function setSpread(s){spread3d=s;}
@@ -827,8 +840,50 @@ function initRowController(ri,T,panels){
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 var PANEL_REGISTRY={};  // Global registry: PANEL_REGISTRY[ri][ci] = panel
+
+function getQueryIndices(param){
+  var query = window.location.search.substring(1);
+  var vars = query.split("&");
+  for (var i=0;i<vars.length;i++) {
+    var pair = vars[i].split("=");
+    if(pair[0] == param) {return decodeURIComponent(pair[1]); }
+  }
+  return null;
+}
+
+function applyQueryFilter(){
+  var val = getQueryIndices('show') || getQueryIndices('rows') || getQueryIndices('display_indices');
+  if(!val) return null;
+  var keep = new Set();
+  var parts = val.split(',');
+  for(var i=0; i<parts.length; i++){
+    var p = parts[i].trim();
+    if(!p) continue;
+    if(p.indexOf('-') > -1){
+      var s = p.split('-');
+      var start = parseInt(s[0]), end = parseInt(s[1]);
+      if(!isNaN(start) && !isNaN(end)){
+        for(var j=start; j<=end; j++) keep.add(j);
+      }
+    } else {
+      var n = parseInt(p);
+      if(!isNaN(n)) keep.add(n);
+    }
+  }
+  
+  var rowEls = document.querySelectorAll('.sample-row');
+  for(var i=0; i<rowEls.length; i++){
+    if(!keep.has(i)){
+      rowEls[i].style.display = 'none';
+    }
+  }
+  return keep;
+}
+
 function bootstrap(){
+  var allowedRows = applyQueryFilter();
   for(var ri=0;ri<ALL_ROWS.length;ri++){
+    if(allowedRows && !allowedRows.has(ri)) continue;
     (function(rowIdx){
       var row=ALL_ROWS[rowIdx];
       var panels=[];
@@ -883,6 +938,74 @@ function bootstrap(){
     })(ri);
   }
   
+  // ── Global color synchronization ─────────────────────────────────────────
+  var globalInputs = document.querySelectorAll('.global-color-input');
+  for (var gi = 0; gi < globalInputs.length; gi++) {
+    globalInputs[gi].addEventListener('input', function(e){
+      var t = e.target;
+      var lbl = t.getAttribute('data-label');
+      var col = t.value;
+
+      // Update all rows holding a skeleton with this label
+      for (var ri = 0; ri < ALL_ROWS.length; ri++) {
+        var row = ALL_ROWS[ri];
+        if (!PANEL_REGISTRY[ri]) continue;
+        
+        // Find indices of this label in this row
+        var rowIndices = [];
+        var firstPanelSkels = row.panels[0] ? (row.panels[0].skeletons || []) : [];
+        for (var si = 0; si < firstPanelSkels.length; si++) {
+          if (firstPanelSkels[si].label === lbl) {
+            rowIndices.push(si);
+          }
+        }
+        
+        for (var l = 0; l < rowIndices.length; l++) {
+          var si = rowIndices[l];
+          for (var ci = 0; ci < row.panels.length; ci++) {
+            var panel = PANEL_REGISTRY[ri][ci];
+            if (panel && panel.setSkeletonColor) {
+              panel.setSkeletonColor(si, col);
+              if (panel.setFrame) panel.setFrame(getCurrentFrame(ri));
+            }
+            var cell = document.getElementById('cell-r'+ri+'-c'+ci);
+            if (cell) {
+              var badges = cell.querySelectorAll('.skel-badge');
+              if (badges[si]) {
+                badges[si].style.background = col + '22';
+                badges[si].style.borderColor = col + '66';
+                badges[si].style.color = col;
+              }
+            }
+          }
+          
+          // Update the row-level color picker UI if it exists
+          var cpWrap = document.getElementById('color-pickers-r'+ri);
+          if (cpWrap) {
+            var rowColorInputs = cpWrap.querySelectorAll('input[type="color"]');
+            if (rowColorInputs[si]) {
+              rowColorInputs[si].value = col;
+            }
+          }
+        }
+      }
+      
+      // Update label strips at the bottom of rows
+      var labelStrips = document.querySelectorAll('.row-labels');
+      for (var ri = 0; ri < labelStrips.length; ri++) {
+        var items = labelStrips[ri].querySelectorAll('.model-label-text');
+        for (var li = 0; li < items.length; li++) {
+          if (items[li].textContent === lbl) {
+            items[li].style.color = col;
+            if (items[li].previousElementSibling) {
+              items[li].previousElementSibling.style.background = col;
+            }
+          }
+        }
+      }
+    });
+  }
+
   // ── Global keyboard shortcuts ───────────────────────────────────────────────
   document.addEventListener('keydown',function(e){
     if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
@@ -891,6 +1014,7 @@ function bootstrap(){
       var idx=parseInt(key)-1;
       // Toggle skeleton idx across all panels in all rows
       for(var ri=0;ri<ALL_ROWS.length;ri++){
+        if (!PANEL_REGISTRY[ri]) continue;
         var row=ALL_ROWS[ri];
         for(var ci=0;ci<row.panels.length;ci++){
           var pd=row.panels[ci];
@@ -1077,18 +1201,30 @@ def generate_html(
     edges = _JOINT_SETS.get(joint_set, SMPL22_EDGES)
     meta = f"{len(rows)} sample(s) · {_dt.now().strftime('%Y-%m-%d %H:%M')}"
 
-    # ── legend (unique colours present in the file) ──────────────────────────
-    seen: dict[str, str] = {}
+    # ── global legend / colour controls (unique labels) ──────────────────────
+    seen_labels = {}
     for row in rows:
         for panel in row["panels"]:
             for sk in panel.get("skeletons", []):
-                if sk.get("label") and sk["color"] not in seen:
-                    seen[sk["color"]] = sk["label"]
-    legend_items = "".join(
-        f'''<div class="legend-item"><div class="dot" style="background:{c}"></div>{l}</div>'''
-        for c, l in seen.items()
-    )
-    legend_html = f'''<div class="legend">{legend_items}</div>''' if legend_items else ""
+                lbl = sk.get("label", "")
+                if lbl and lbl not in seen_labels:
+                    seen_labels[lbl] = {"color": sk["color"], "path": sk.get("path", "")}
+    
+    global_items = []
+    for i, (lbl, info) in enumerate(seen_labels.items()):
+        c = info["color"]
+        p = info["path"]
+        path_html = f'''<span style="opacity:0.6; margin-left:10px; font-size:9px;" title="{p}">{p}</span>''' if p else ""
+        global_items.append(
+            f'''<div class="cp-item">'''
+            f'''<input type="color" class="global-color-input" data-label="{lbl}" value="{c}" id="gcolor-{i}"/>'''
+            f'''<label for="gcolor-{i}" style="cursor:pointer; font-weight: bold;">{lbl}</label>'''
+            f'''{path_html}'''
+            f'''</div>'''
+        )
+    global_html = f'''<div class="legend" style="flex-direction:column; align-items:flex-start; gap:8px;">''' \
+                  f'''<div style="font-family:'Space Mono',monospace; font-size:11px; font-weight:bold; color:var(--accent);">Global Color Controls:</div>''' \
+                  + "".join(global_items) + f'''</div>''' if global_items else ""
 
     # ── per-row HTML ──────────────────────────────────────────────────────────
     rows_html_parts: list[str] = []
@@ -1125,7 +1261,7 @@ def generate_html(
         title=title,
         css=_CSS,
         meta=meta,
-        legend_html=legend_html,
+        legend_html=global_html,
         rows_html=rows_html,
         edges_json=edges_json,
         rows_json=rows_json,

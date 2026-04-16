@@ -52,13 +52,13 @@ import argparse
 
 # Colour palette for overlaid predictions (GT always uses _GT_COLOR)
 _PRED_PALETTE = [
-    "#FF6B6B",  # coral
-    "#BD93F9",  # purple
-    "#8BE9FD",  # cyan
-    "#F1FA8C",  # yellow
+    "#FF0000",  # coral
+    "#33FF00",  # purple
+    "#FF00FF",  # yellow
+    "#00FFF2",  # cyan
 ]
 # _GT_COLOR = "#50FA7B"  # green
-_GT_COLOR = "#4ECDC4"  # light blue
+_GT_COLOR = "#0400FF"  # light blue
 
 
 # ── Path-label helpers ────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ def _parse_path_labels(npz_path: str, with_character: bool = False) -> tuple[str
             motion_name  = f"{parts[-3]}/{parts[-2]}"
             ckpt_name    = parts[-4]
             model_config = parts[-5]
-            ckpt_label   = f"{ckpt_name} / {_shorten(model_config)}"
+            ckpt_label   = f"{model_config}/{ckpt_name}"
         elif len(parts) >= 4:
             motion_name = f"{parts[-3]}/{parts[-2]}"
             ckpt_label  = parts[-4]
@@ -100,7 +100,7 @@ def _parse_path_labels(npz_path: str, with_character: bool = False) -> tuple[str
             motion_name  = parts[-2]
             ckpt_name    = parts[-3]
             model_config = parts[-4]
-            ckpt_label   = f"{ckpt_name} / {_shorten(model_config)}"
+            ckpt_label   = f"{model_config}/{ckpt_name}"
         elif len(parts) >= 3:
             motion_name = parts[-2]
             ckpt_label  = parts[-3]
@@ -120,9 +120,13 @@ def _load_npz(path: str, with_character: bool = False) -> dict:
     path_motion, path_ckpt = _parse_path_labels(path, with_character=with_character)
 
     motion_name = str(dat["motion_name"]).strip() if "motion_name" in dat else path_motion
-    ckpt_label  = Path(str(dat["ckpt"])).stem.strip() if "ckpt" in dat else path_ckpt
+    
+    # Always prefer the parsed directory structure (path_ckpt) over dat["ckpt"] 
+    # because dat["ckpt"] might just be the ckpt filename and lose the model_name context.
+    ckpt_label = path_ckpt
+
     if not ckpt_label:
-        ckpt_label = path_ckpt
+        ckpt_label = Path(str(dat["ckpt"])).stem.strip() if "ckpt" in dat else path_ckpt
 
     print(f"  motion={motion_name}  ckpt={ckpt_label}")
     return {
@@ -152,8 +156,8 @@ def _build_row(group: list[dict], row_label: str, image_quality: int) -> dict:
     skels_2d = []
     for i, e in enumerate(group):
         col = _PRED_PALETTE[i % len(_PRED_PALETTE)]
-        skels_3d.append({"joints": e["motion_pred_3d"], "color": col, "label": e["ckpt_label"]})
-        skels_2d.append({"joints": e["motion_pred_2d"], "color": col, "label": e["ckpt_label"]})
+        skels_3d.append({"joints": e["motion_pred_3d"], "color": col, "label": e["ckpt_label"], "path": e["path"]})
+        skels_2d.append({"joints": e["motion_pred_2d"], "color": col, "label": e["ckpt_label"], "path": e["path"]})
 
     skels_3d.append({"joints": gt_3d, "color": _GT_COLOR, "label": "GT"})
     skels_2d.append({"joints": gt_2d, "color": _GT_COLOR, "label": "GT"})
@@ -238,6 +242,7 @@ if __name__ == "__main__":
                     help="Use 5-level path layout: .../model/ckpt/character/motion/res.npz. "
                          "The grouping key becomes 'character/motion' so entries from different "
                          "checkpoints but the same character+motion are overlaid on one row.")
+    ap.add_argument("--display_indices", default=None,       help="Filter which rows/motions to display (e.g., '1-4, 5, 8'). 0-indexed.")
     args = ap.parse_args()
 
     # Auto-discover .npz files from --discover directories
@@ -270,6 +275,21 @@ if __name__ == "__main__":
 
     row_ids = args.row_id if not args.no_group else None
     rows = build_rows(entries, row_ids=row_ids, image_quality=args.image_quality)
+
+    if args.display_indices is not None:
+        keep = []
+        for part in args.display_indices.split(','):
+            part = part.strip()
+            if not part: continue
+            if '-' in part:
+                s, e = map(int, part.split('-'))
+                keep.extend(range(s, e + 1))
+            else:
+                keep.append(int(part))
+        keep_set = set(keep)
+        rows = [r for i, r in enumerate(rows) if i in keep_set]
+        print(f"Filtered to {len(rows)} row(s) based on --display_indices.")
+
     print(f"Built {len(rows)} row(s).")
 
     generate_html(rows, output_path=args.out, title=args.title, cell_height=args.cell_height)
