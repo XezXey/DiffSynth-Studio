@@ -21,6 +21,7 @@ class TrainOnDiTFeatures(L.LightningModule):
             out_J_chn, 
             preferred_dit_block_id,
             log_dir,
+            loss_type,
             vis_steps,
             save_steps,
             val_steps,
@@ -46,6 +47,7 @@ class TrainOnDiTFeatures(L.LightningModule):
         self.log_dir = log_dir
         self.wandb_logger = logger
         self.predict_motion_dt = predict_motion_dt
+        self.loss_type = loss_type
         
         self.make_parameters_trainable(self.head)
         self.make_parameters_trainable(self.joint_vae)
@@ -243,19 +245,29 @@ class TrainOnDiTFeatures(L.LightningModule):
         assert j2d_pred.shape == j2d_gt.shape, f"j2d_pred shape {j2d_pred.shape} does not match gt_j2d shape {j2d_gt.shape}"
 
         # Loss
-        loss_3d = th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
-        loss_3d = loss_3d.sum() / (mask.float().sum() + 1e-8)  # average over valid joints only
-        loss_2d = th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
-        loss_2d = loss_2d.sum() / (mask.float().sum() + 1e-8)
-        loss_depth = th.nn.functional.mse_loss(jd_pred.float(), jd_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
-        loss_depth = loss_depth.sum() / (mask.float().sum() + 1e-8)
-        loss = loss_3d + loss_2d * 1000.0 + loss_depth
+        if "3d" in self.loss_type:
+            loss_3d = th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
+            loss_3d = loss_3d.sum() / (mask.float().sum() + 1e-8)  # average over valid joints only
+        else: 
+            loss_3d = th.tensor(0.0, device=j3d_pred.device)
+        if "2d" in self.loss_type:
+            loss_2d = th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
+            loss_2d = loss_2d.sum() / (mask.float().sum() + 1e-8)
+        else:
+            loss_2d = th.tensor(0.0, device=j2d_pred.device)
+        if "depth" in self.loss_type:
+            loss_depth = th.nn.functional.mse_loss(jd_pred.float(), jd_gt.float()) * mask.unsqueeze(-1).float()  # zero out loss for joints that are out of frame
+            loss_depth = loss_depth.sum() / (mask.float().sum() + 1e-8)
+        else:
+            loss_depth = th.tensor(0.0, device=jd_pred.device)
+            
+        final_loss = loss_3d + loss_2d * 1000.0 + loss_depth
         # Accuracy metrics (for monitoring only, not used in loss)
         rmse_3d = th.sqrt(th.nn.functional.mse_loss(j3d_pred.float(), j3d_gt.float(), reduction='none').mean(dim=-1))  # T, J
         rmse_2d = th.sqrt(th.nn.functional.mse_loss(j2d_pred.float(), j2d_gt.float(), reduction='none').mean(dim=-1))  # T, J
         rmse_depth = th.sqrt(th.nn.functional.mse_loss(jd_pred.float(), jd_gt.float(), reduction='none').mean(dim=-1))  # T, J
 
-        loss_dict = {"loss": loss, "loss_3d": loss_3d, "loss_2d": loss_2d, "loss_depth": loss_depth}
+        loss_dict = {"loss": final_loss, "loss_3d": loss_3d, "loss_2d": loss_2d, "loss_depth": loss_depth}
         acc_dict = {"rmse_3d": rmse_3d.mean().item(), "rmse_2d": rmse_2d.mean().item(), "rmse_depth": rmse_depth.mean().item()}
         
         # Detach for visualization and logging to avoid memory leak

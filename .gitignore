@@ -188,3 +188,4 @@ dev/prepare_data/Mixamo/download_dataset
 dev/prepare_data/Mixamo/blender_bin
 dev/prepare_data/nvoptix
 dev/prepare_data/Mixamo/out_try
+examples/wanvideo/my_scripts/training_on_prep_dit_features/results

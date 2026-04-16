@@ -27,6 +27,7 @@ parser.add_argument("--out_J_chn", type=int, default=2, help="Output channels fo
 parser.add_argument("--predict_motion_dt", action='store_true', help="Whether the model predicts motion delta (True) or absolute motion (False). If True, the depth output will be treated as motion delta and converted to absolute motion by cumulative summation over time.")
 parser.add_argument("--predict_motion_ar_depth", action='store_true', help="Whether the model predicts motion delta (True) or absolute motion (False). If True, the depth output will be treated as motion delta and converted to absolute motion by cumulative summation over time.")
 parser.add_argument("--preferred_dit_block_id", type=int, default=-1, help="Preferred DiT block ID.")
+parser.add_argument("--dim_mult", nargs="+", type=float, default=[1, 2, 4, 4], help="Dimension multiplier for each layer in the JointVAE38. Should be a list of float.")
 args = parser.parse_args()
 
 class SkelAg(th.nn.Module):
@@ -48,6 +49,7 @@ class SkelAg(th.nn.Module):
         self.dim_mult = dim_mult
         self.out_J_chn = out_J_chn
         self.predict_motion_dt = predict_motion_dt
+        self.dim_mult = dim_mult
 
         self.head = Head(dim=dim, out_dim=out_dim, patch_size=patch_size, eps=eps).eval()
         self.joint_vae = JointVAE38(J=J, out_J_chn=out_J_chn, z_dim=48, num_res_blocks=num_res_blocks, dim_mult=dim_mult).eval()
@@ -65,9 +67,9 @@ class SkelAg(th.nn.Module):
         patch_size = inputs["patch_size"]
 
         out_head = self.head(inp)  # 1, out_dim, H, W
-        print(out_head.shape)
+        # print(out_head.shape)
         out_unpatched = unpatchify(out_head, grid_size, patch_size)  # 1, out_dim, T, H, W
-        print(out_unpatched.shape)
+        # print(out_unpatched.shape)
         out_decoded = self.joint_vae.decode(out_unpatched, device='cuda')  # 1, J*3, T, 1, 1
         out_joints_map = self.joint_head(out_decoded)  # 1, J*2, T, 1, 1
 
@@ -77,6 +79,10 @@ class SkelAg(th.nn.Module):
         E_bl = inputs["cams_extr"].squeeze(0)  # (T, 4, 4)
         org_h = cy * 2.0 + 1
         org_w = cx * 2.0 + 1
+        # print(f"fx: {fx}, fy: {fy}, cx: {cx}, cy: {cy}")
+        # print(f"org_h: {org_h}, org_w: {org_w}")
+        # print(th.max(pixel_coords[..., 0]), th.max(pixel_coords[..., 1]))
+        # print(th.min(pixel_coords[..., 0]), th.min(pixel_coords[..., 1]))
 
         pred_u = pixel_coords[..., 0] * (org_w - 1)    # B, J, T
         pred_v = pixel_coords[..., 1] * (org_h - 1)    # B, J, T
@@ -144,14 +150,22 @@ if __name__ == "__main__":
     logger.info(f"ckpt: {args.ckpt}")
 
     # Initialize model
-    model = SkelAg(dim=dim, out_dim=out_dim, patch_size=patch_size, J=args.J, out_J_chn=args.out_J_chn, predict_motion_dt=args.predict_motion_dt).cuda(args.gpu_id)
-    # mean_init, std_init = model.get_params_stats()
-    # logger.warning(f"Model initialized. Param mean: {mean_init:.6f}, std: {std_init:.6f}")
-    # state_dict = th.load(args.ckpt, map_location="cpu")
-    # model.load_state_dict(state_dict)
-    # mean_loaded, std_loaded = model.get_params_stats()
-    # logger.warning(f"Model loaded from checkpoint. Param mean: {mean_loaded:.6f}, std: {std_loaded:.6f}")
-    # assert abs(mean_loaded - mean_init) > 1e-5 or abs(std_loaded - std_init) > 1e-5, "Model parameters do not seem to be loaded properly (mean/std are almost the same as initialized). Please check the checkpoint path and content."
+    model = SkelAg(
+        dim=dim, 
+        out_dim=out_dim, 
+        patch_size=patch_size, 
+        J=args.J, 
+        out_J_chn=args.out_J_chn, 
+        predict_motion_dt=args.predict_motion_dt,
+        dim_mult=args.dim_mult
+    ).cuda(args.gpu_id)
+    mean_init, std_init = model.get_params_stats()
+    logger.warning(f"Model initialized. Param mean: {mean_init:.6f}, std: {std_init:.6f}")
+    state_dict = th.load(args.ckpt, map_location="cpu")
+    model.load_state_dict(state_dict)
+    mean_loaded, std_loaded = model.get_params_stats()
+    logger.warning(f"Model loaded from checkpoint. Param mean: {mean_loaded:.6f}, std: {std_loaded:.6f}")
+    assert abs(mean_loaded - mean_init) > 1e-5 or abs(std_loaded - std_init) > 1e-5, "Model parameters do not seem to be loaded properly (mean/std are almost the same as initialized). Please check the checkpoint path and content."
     model.eval().cuda(args.gpu_id)
 
     n_motion = 0
@@ -203,6 +217,11 @@ if __name__ == "__main__":
                     org_h = cy * 2.0 + 1
                     org_w = cx * 2.0 + 1
                     gt_motion2d = batch["joints_2d"].squeeze(0).to(device) # (J, T, 2)
+                    # print(th.max(motion2d_frames[-1][..., 0]), th.max(motion2d_frames[-1][..., 1]))
+                    # print(th.min(motion2d_frames[-1][..., 0]), th.min(motion2d_frames[-1][..., 1]))
+                    # print(th.max(gt_motion2d[..., 0]), th.max(gt_motion2d[..., 1]))
+                    # print(th.min(gt_motion2d[..., 0]), th.min(gt_motion2d[..., 1]))
+                    # exit()
                     gt_motion2d[..., 0] = gt_motion2d[..., 0] / (org_w - 1)
                     gt_motion2d[..., 1] = gt_motion2d[..., 1] / (org_h - 1)
                     gt_motion2d_frames.append(gt_motion2d.cpu())
