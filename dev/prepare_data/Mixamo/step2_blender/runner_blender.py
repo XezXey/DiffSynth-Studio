@@ -104,7 +104,7 @@ def _build_command(motion_file: str, char_output_dir: str, gpu_id: str, args) ->
         f" --gpu_id {gpu_id}"
     )
     cmd = (
-        f"python run_blender.py --fbx {shlex.quote(motion_file)}"
+        f"python process_single_fbx.py --fbx {shlex.quote(motion_file)}"
         f" --out_dir {shlex.quote(char_output_dir)} {render}"
     )
     if args.use_gpu:          cmd += " --use_gpu"
@@ -113,7 +113,6 @@ def _build_command(motion_file: str, char_output_dir: str, gpu_id: str, args) ->
     if args.only_body_joints: cmd += " --only_body_joints"
     if args.skip_plot_map:    cmd += " --skip_plot_map"
     print(cmd)
-    exit()
     return cmd
 
 

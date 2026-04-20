@@ -41,7 +41,6 @@ import sys
 import os
 import glob
 import math
-import subprocess
 import argparse
 
 # ---------------------------------------------------------------------------

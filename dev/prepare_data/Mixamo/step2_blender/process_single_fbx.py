@@ -1,5 +1,8 @@
 import os
 import argparse
+import mylogger
+logger = mylogger.init_logger("process_single_fbx") 
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--blender_bin', default='/host/ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender', type=str, help='Path to Blender executable')
 parser.add_argument('--fbx', nargs='+', type=str, required=True, help='Path to input FBX file')
@@ -21,6 +24,7 @@ args = parser.parse_args()
 # CMD: /ist/users/puntawatp/Dev/SkelAg/Blender/blender-5.0.0-linux-x64/blender -b -P gen_data.py
 # CMD: python project2d.py
 if __name__ == "__main__":
+    logger.info("Starting processing single FBX script (process_single_fbx.py)...")
     if args.run_blender:
         # Arguments for Blender script
         fbx = f"--fbx {' '.join(args.fbx)}"
@@ -37,9 +41,9 @@ if __name__ == "__main__":
         blender_cmd = f"python ./blender_render.py -- {fbx} {out_dir} {render_settings}"
         blender_cmd += " --use_gpu" if args.use_gpu else ""
         blender_cmd += f" --gpu_id {args.gpu_id}"
-        print(blender_cmd)
+        logger.info(f"Blender command: {blender_cmd}")
         os.system(blender_cmd)
-        print("#" * 100)
+        logger.info("#" * 100)
 
     if args.run_projection:
         # After rendering, run the 2D projection
@@ -47,6 +51,6 @@ if __name__ == "__main__":
         projection_cmd = f"python ./blender_projection.py --path \"{args.out_dir}\""
         projection_cmd += " --only_body_joints" if args.only_body_joints else ""
         projection_cmd += " --skip_plot_map" if args.skip_plot_map else ""
-        print(projection_cmd)
+        logger.info(f"Projection command: {projection_cmd}")
         os.system(projection_cmd)
-        print("#" * 100)
+        logger.info("#" * 100)
