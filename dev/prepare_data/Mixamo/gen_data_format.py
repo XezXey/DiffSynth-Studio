@@ -70,7 +70,6 @@ if __name__ == "__main__":
                 input_path = os.path.join(cam, 'proj%04d.png').replace(' ', '\ ')
                 output_video_path = os.path.join(output_path, f'{vid_name}_proj.mp4').replace(' ', '\ ')
                 vid_from_frames(input_path, output_video_path)
-
             
             # Copy motion_data.npz
             src_npz = os.path.join(cam, 'motion.npz').replace(' ', '\ ')
