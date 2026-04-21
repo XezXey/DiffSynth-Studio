@@ -1,10 +1,14 @@
-    
 import os, glob, argparse
 import pandas as pd
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_path', type=str, required=True)
 parser.add_argument('--metadata_to_combined', type=str, default=None, help='Filename for search and copy metadata CSV to combined output folder (if --combined_output is set)')
 args = parser.parse_args()
+
+"""
+#NOTE: This script combined all character-specific subfolders into a single folder (For WanPipeline).
+"""
+
 
 if __name__ == "__main__":
     # Move all videos and motion_data.npz files from character subfolders to the main output folder

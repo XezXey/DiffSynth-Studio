@@ -62,11 +62,12 @@ def _parse_args() -> argparse.Namespace:
 
     # ── global skip flags ─────────────────────────────────────────────────────
     skip = p.add_argument_group("skip flags  (skip individual steps)")
-    skip.add_argument("--skip_render",     action="store_true", default=False, help="Skip step 1: render FBX files.")
-    skip.add_argument("--skip_format",     action="store_true", default=False, help="Skip step 2: reformat render output.")
-    skip.add_argument("--skip_chunk",      action="store_true", default=False, help="Skip step 3: chunk into N-frame clips.")
-    skip.add_argument("--skip_combine",    action="store_true", default=False, help="Skip step 4: combine character folders.")
-    skip.add_argument("--skip_precompute", action="store_true", default=False, help="Skip step 5: precompute VAE/DIT features.")
+    skip.add_argument("--skip_change_name", action="store_true", default=False, help="Skip step 1: change file names.")
+    skip.add_argument("--skip_render",     action="store_true", default=False, help="Skip step 2: render FBX files.")
+    skip.add_argument("--skip_format",     action="store_true", default=False, help="Skip step 3: reformat render output.")
+    skip.add_argument("--skip_chunk",      action="store_true", default=False, help="Skip step 4: chunk into N-frame clips.")
+    skip.add_argument("--skip_combine",    action="store_true", default=False, help="Skip step 5: combine character folders.")
+    skip.add_argument("--skip_precompute", action="store_true", default=False, help="Skip step 6: precompute VAE/DIT features.")
 
     # ── paths ─────────────────────────────────────────────────────────────────
     paths = p.add_argument_group("paths")
@@ -157,19 +158,14 @@ def _combined_meta_name(a: argparse.Namespace) -> str:
     stem = os.path.splitext(a.metadata_name)[0]       # "metadata_front_view"
     return f"{stem}_{a.n_frames}frames.csv"            # "metadata_front_view_5frames.csv"
 
-
-def _host_chunk_dir(a: argparse.Namespace) -> str:
-    """chunk_output_dir with optional host prefix, no trailing slash."""
-    prefix = a.host_prefix.rstrip("/") if a.host_prefix else ""
-    return prefix + a.chunk_output_dir.rstrip("/")
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Pipeline steps
 # ══════════════════════════════════════════════════════════════════════════════
 
-def step1_render(a: argparse.Namespace) -> None:
-    """Step 1 – render FBX files through Blender / 2-D projection."""
+def step1_change_name(a: argparse.Namespace) -> None:
+
+def step2_render(a: argparse.Namespace) -> None:
+    """Step 2 – render FBX files through Blender / 2-D projection."""
     flags = ""
     if a.use_gpu:          flags += " --use_gpu"
     if a.run_blender:      flags += " --run_blender"
@@ -196,8 +192,8 @@ def step1_render(a: argparse.Namespace) -> None:
     # exit()
 
 
-def step2_format(a: argparse.Namespace) -> None:
-    """Step 2 – reformat raw render output into dataset structure."""
+def step3_format(a: argparse.Namespace) -> None:
+    """Step 3 – reformat raw render output into dataset structure."""
     cmd = (
         f'python gen_data_format_multiple_chars.py'
         f' --data_path "{a.render_output_dir}"'
@@ -206,8 +202,8 @@ def step2_format(a: argparse.Namespace) -> None:
     _run(cmd, cwd=_HERE, step="2 – gen dataset format")
 
 
-def step3_chunk(a: argparse.Namespace) -> None:
-    """Step 3 – split long sequences into N-frame chunks."""
+def step4_chunk(a: argparse.Namespace) -> None:
+    """Step 4 – split long sequences into N-frame chunks."""
     # metadata_example just needs the right basename; point into format_output_dir
     # so chunk_data_multiple_chars.py can locate it via os.walk.
     metadata_example = os.path.join(a.format_output_dir, a.metadata_name)
@@ -223,9 +219,8 @@ def step3_chunk(a: argparse.Namespace) -> None:
     _run(cmd, cwd=_HERE, step="3 – chunk into N-frame clips")
 
 
-def step4_combine(a: argparse.Namespace) -> None:
-    """Step 4 – merge all character subfolders into a single 'all/' directory."""
-    # host_chunk = _host_chunk_dir(a) + "/"   # trailing slash expected by combined_output.py
+def step5_combine(a: argparse.Namespace) -> None:
+    """Step 5 – merge all character subfolders into a single 'all/' directory."""
 
     cmd = (
         f'python combined_output.py'
@@ -235,9 +230,8 @@ def step4_combine(a: argparse.Namespace) -> None:
     _run(cmd, cwd=_HERE, step="4 – combine character outputs")
 
 
-def step5_precompute(a: argparse.Namespace) -> None:
-    """Step 5 – precompute VAE latents and DIT features."""
-    # host_chunk            = _host_chunk_dir(a)
+def step6_precompute(a: argparse.Namespace) -> None:
+    """Step 6 – precompute VAE latents and DIT features."""
     host_chunk            = a.chunk_output_dir
     combined_meta         = _combined_meta_name(a)
     dataset_base_path     = f"{host_chunk}/all/"
@@ -269,7 +263,6 @@ def step5_precompute(a: argparse.Namespace) -> None:
     # precompute_features.py resolves internal paths relative to the repo root.
     _run(cmd, cwd=_REPO_ROOT, step="5 – precompute VAE latents + DIT features")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Entry point
 # ══════════════════════════════════════════════════════════════════════════════
@@ -278,26 +271,30 @@ def main() -> None:
     a = _parse_args()
 
     completed = []
+    
+    if not a.skip_change_name:
+        step1_change_name(a)
+        completed.append("1 – change file names")
 
     if not a.skip_render:
-        step1_render(a)
-        completed.append("1 – render")
+        step2_render(a)
+        completed.append("2 – render")
 
     if not a.skip_format:
-        step2_format(a)
-        completed.append("2 – format")
+        step3_format(a)
+        completed.append("3 – format")
 
     if not a.skip_chunk:
-        step3_chunk(a)
-        completed.append("3 – chunk")
+        step4_chunk(a)
+        completed.append("4 – chunk")
 
     if not a.skip_combine:
-        step4_combine(a)
-        completed.append("4 – combine")
+        step5_combine(a)
+        completed.append("5 – combine")
 
     if not a.skip_precompute:
-        step5_precompute(a)
-        completed.append("5 – precompute")
+        step6_precompute(a)
+        completed.append("6 – precompute")
     
     print("\n" + "="*70)
     print("  PIPELINE COMPLETE")
