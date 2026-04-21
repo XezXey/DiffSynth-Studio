@@ -1,4 +1,8 @@
+"""
+#NOTE: This script is for renaming the Mixamo's FBX files to a consistent format (remove special characters)
 #NOTE: Everything need to be run in singularity (Using /host/... instead of /data/...)
+"""
+
 import os, glob, tqdm
 import shutil
 import argparse
